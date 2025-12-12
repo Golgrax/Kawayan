@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { BrandProfile } from '../types';
-import { ArrowRight, Store, Users, MessageCircle, PenTool } from 'lucide-react';
+import { ArrowRight, Store, Users, MessageCircle, PenTool, Check } from 'lucide-react';
 
 interface Props {
   onComplete: (profile: BrandProfile) => void;
@@ -25,85 +25,124 @@ const BrandSurvey: React.FC<Props> = ({ onComplete }) => {
     setProfile(prev => ({ ...prev, [field]: value }));
   };
 
+  const tones = [
+    { label: 'Professional & Trustworthy', desc: 'Corporate, serious, expert' },
+    { label: 'Makulit & Fun (Kwelang Pinoy)', desc: 'Meme-style, energetic, relatable' },
+    { label: 'Inspirational (Hugot)', desc: 'Emotional, motivational, deep' },
+    { label: 'Premium & Minimalist', desc: 'Sleek, high-end, few words' },
+    { label: 'Friendly Tita', desc: 'Caring, warm, gossipy but nice' }
+  ];
+
   return (
-    <div className="max-w-2xl mx-auto p-6 bg-white rounded-2xl shadow-xl border border-slate-100">
-      <div className="mb-8 text-center">
-        <h2 className="text-3xl font-bold text-slate-800 mb-2">Setup Your Brand Profile</h2>
-        <p className="text-slate-500">Let's tailor the AI to your Filipino business.</p>
-        <div className="flex justify-center mt-4 gap-2">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className={`h-2 w-16 rounded-full transition-all ${i <= step ? 'bg-emerald-500' : 'bg-slate-200'}`} />
-          ))}
+    <div className="max-w-3xl mx-auto">
+       {/* Progress Header */}
+      <div className="mb-8 flex flex-col items-center">
+        <h2 className="text-3xl font-bold text-slate-800 mb-2">Setup Your Brand</h2>
+        <p className="text-slate-500 mb-6">Let's tailor Kawayan AI to your business.</p>
+        <div className="w-full h-1 bg-slate-200 rounded-full overflow-hidden max-w-sm">
+           <div 
+             className="h-full bg-emerald-500 transition-all duration-500 ease-out" 
+             style={{ width: `${(step / 4) * 100}%` }}
+           />
         </div>
       </div>
 
-      <div className="min-h-[300px]">
+      {/* Card Container */}
+      <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-8 min-h-[420px] relative overflow-hidden">
+        
+        {/* Animated Background Blob */}
+        <div className="absolute -top-20 -right-20 w-64 h-64 bg-emerald-50 rounded-full blur-3xl opacity-50 pointer-events-none"></div>
+
         {step === 1 && (
-          <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-            <div className="flex items-center gap-3 mb-4">
-              <Store className="w-6 h-6 text-emerald-600" />
-              <h3 className="text-xl font-semibold">Business Basics</h3>
+          <div className="animate-in fade-in slide-in-from-right-8 duration-500">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 bg-emerald-100 rounded-xl text-emerald-600">
+                <Store className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">Business Basics</h3>
+                <p className="text-sm text-slate-400">What is your business called?</p>
+              </div>
             </div>
-            <label className="block mb-4">
-              <span className="text-slate-700 font-medium">Business Name</span>
-              <input
-                type="text"
-                className="mt-1 block w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition"
-                placeholder="e.g., Aling Nena's Pastries"
-                value={profile.businessName}
-                onChange={(e) => handleChange('businessName', e.target.value)}
-              />
-            </label>
-            <label className="block">
-              <span className="text-slate-700 font-medium">Industry / Niche</span>
-              <input
-                type="text"
-                className="mt-1 block w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition"
-                placeholder="e.g., Food & Beverage, Fashion, Hardware"
-                value={profile.industry}
-                onChange={(e) => handleChange('industry', e.target.value)}
-              />
-            </label>
+            
+            <div className="space-y-6">
+              <label className="block">
+                <span className="text-slate-700 font-semibold mb-2 block">Business Name</span>
+                <input
+                  type="text"
+                  className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition text-lg"
+                  placeholder="e.g., Aling Nena's Pastries"
+                  value={profile.businessName}
+                  onChange={(e) => handleChange('businessName', e.target.value)}
+                  autoFocus
+                />
+              </label>
+              <label className="block">
+                <span className="text-slate-700 font-semibold mb-2 block">Industry / Niche</span>
+                <input
+                  type="text"
+                  className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition text-lg"
+                  placeholder="e.g., Food & Beverage, Fashion, Hardware"
+                  value={profile.industry}
+                  onChange={(e) => handleChange('industry', e.target.value)}
+                />
+              </label>
+            </div>
           </div>
         )}
 
         {step === 2 && (
-          <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-             <div className="flex items-center gap-3 mb-4">
-              <Users className="w-6 h-6 text-emerald-600" />
-              <h3 className="text-xl font-semibold">Target Audience</h3>
+          <div className="animate-in fade-in slide-in-from-right-8 duration-500">
+             <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 bg-blue-100 rounded-xl text-blue-600">
+                <Users className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">Target Audience</h3>
+                <p className="text-sm text-slate-400">Who are we talking to?</p>
+              </div>
             </div>
             <label className="block">
-              <span className="text-slate-700 font-medium">Who are your customers?</span>
               <textarea
-                className="mt-1 block w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition h-32 resize-none"
+                className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition h-48 resize-none text-lg leading-relaxed"
                 placeholder="e.g., Gen Z students in Manila, Working Moms looking for quick meals, titas of Manila..."
                 value={profile.targetAudience}
                 onChange={(e) => handleChange('targetAudience', e.target.value)}
+                autoFocus
               />
             </label>
           </div>
         )}
 
         {step === 3 && (
-          <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-             <div className="flex items-center gap-3 mb-4">
-              <MessageCircle className="w-6 h-6 text-emerald-600" />
-              <h3 className="text-xl font-semibold">Brand Voice (Tone)</h3>
+          <div className="animate-in fade-in slide-in-from-right-8 duration-500">
+             <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 bg-purple-100 rounded-xl text-purple-600">
+                <MessageCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">Brand Voice</h3>
+                <p className="text-sm text-slate-400">How should your brand sound?</p>
+              </div>
             </div>
-            <p className="text-sm text-slate-500 mb-4">How should your brand sound to Filipinos?</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {['Professional & Trustworthy', 'Makulit & Fun (Kwelang Pinoy)', 'Inspirational (Hugot)', 'Premium & Minimalist', 'Friendly Tita'].map((tone) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {tones.map((t) => (
                 <button
-                  key={tone}
-                  onClick={() => handleChange('brandVoice', tone)}
-                  className={`p-4 rounded-xl border text-left transition-all ${
-                    profile.brandVoice === tone
-                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-500'
-                      : 'border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
+                  key={t.label}
+                  onClick={() => handleChange('brandVoice', t.label)}
+                  className={`p-4 rounded-2xl border text-left transition-all relative group ${
+                    profile.brandVoice === t.label
+                      ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-500 ring-opacity-20'
+                      : 'border-slate-100 hover:border-emerald-300 hover:shadow-md'
                   }`}
                 >
-                  {tone}
+                  <div className="font-bold text-slate-800 group-hover:text-emerald-700 transition-colors">{t.label}</div>
+                  <div className="text-xs text-slate-500 mt-1">{t.desc}</div>
+                  {profile.brandVoice === t.label && (
+                    <div className="absolute top-4 right-4 bg-emerald-500 rounded-full p-1 text-white">
+                      <Check className="w-3 h-3" />
+                    </div>
+                  )}
                 </button>
               ))}
             </div>
@@ -111,32 +150,43 @@ const BrandSurvey: React.FC<Props> = ({ onComplete }) => {
         )}
 
         {step === 4 && (
-          <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-             <div className="flex items-center gap-3 mb-4">
-              <PenTool className="w-6 h-6 text-emerald-600" />
-              <h3 className="text-xl font-semibold">Content Themes</h3>
+          <div className="animate-in fade-in slide-in-from-right-8 duration-500">
+             <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 bg-orange-100 rounded-xl text-orange-600">
+                <PenTool className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">Content Themes</h3>
+                <p className="text-sm text-slate-400">Key topics you want to cover.</p>
+              </div>
             </div>
             <label className="block">
-              <span className="text-slate-700 font-medium">What key topics do you want to post about?</span>
               <textarea
-                className="mt-1 block w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition h-32 resize-none"
+                className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition h-48 resize-none text-lg leading-relaxed"
                 placeholder="e.g., Product launches, Behind the scenes, Customer testimonials, Funny memes..."
                 value={profile.keyThemes}
                 onChange={(e) => handleChange('keyThemes', e.target.value)}
+                autoFocus
               />
             </label>
           </div>
         )}
       </div>
 
-      <div className="mt-8 flex justify-end">
+      <div className="mt-8 flex justify-between items-center px-2">
+        <button
+          onClick={() => step > 1 && setStep(step - 1)}
+          className={`text-slate-400 font-medium hover:text-slate-600 transition ${step === 1 ? 'opacity-0 pointer-events-none' : ''}`}
+        >
+          Back
+        </button>
         <button
           onClick={handleNext}
           disabled={!profile.businessName && step === 1}
-          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-full font-semibold transition-all shadow-lg shadow-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-8 py-4 rounded-full font-bold transition-all shadow-xl hover:shadow-2xl hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
         >
           {step === 4 ? 'Finish Setup' : 'Next Step'}
-          <ArrowRight className="w-4 h-4" />
+          <ArrowRight className="w-5 h-5" />
         </button>
       </div>
     </div>

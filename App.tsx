@@ -1,110 +1,134 @@
-import React, { useState } from 'react';
-import { ViewState, BrandProfile } from './types';
+import React, { useState, useEffect } from 'react';
+import { ViewState, BrandProfile, User } from './types';
+import { getCurrentUser, getProfile, saveProfile, logoutUser } from './services/storage';
 import BrandSurvey from './components/BrandSurvey';
 import ContentCalendar from './components/ContentCalendar';
 import AdminDashboard from './components/AdminDashboard';
-import { LayoutDashboard, Calendar, ShieldCheck, UserCircle, LogOut } from 'lucide-react';
+import Login from './components/Login';
+import { LayoutDashboard, Calendar, ShieldCheck, LogOut, Lock } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [view, setView] = useState<ViewState>(ViewState.LANDING);
+  const [view, setView] = useState<ViewState>(ViewState.LOGIN);
+  const [user, setUser] = useState<User | null>(null);
   const [brandProfile, setBrandProfile] = useState<BrandProfile | null>(null);
 
-  const handleSurveyComplete = (profile: BrandProfile) => {
-    setBrandProfile(profile);
+  useEffect(() => {
+    // Check for existing session on load
+    const currentUser = getCurrentUser();
+    if (currentUser) {
+      handleLogin(currentUser);
+    }
+    // Check URL hash for admin back door
+    if (window.location.hash === '#admin-portal') {
+      setView(ViewState.ADMIN_LOGIN);
+    }
+  }, []);
+
+  const handleLogin = (loggedInUser: User) => {
+    setUser(loggedInUser);
+    
+    if (loggedInUser.role === 'admin') {
+      setView(ViewState.ADMIN_DASHBOARD);
+    } else {
+      // Check if user has a profile
+      const profile = getProfile(loggedInUser.id);
+      if (profile) {
+        setBrandProfile(profile);
+        setView(ViewState.CALENDAR);
+      } else {
+        // No profile, go to survey
+        setView(ViewState.SURVEY);
+      }
+    }
+  };
+
+  const handleLogout = () => {
+    logoutUser();
+    setUser(null);
+    setBrandProfile(null);
+    setView(ViewState.LOGIN);
+  };
+
+  const handleSurveyComplete = (profileData: BrandProfile) => {
+    if (!user) return;
+    const newProfile = { ...profileData, userId: user.id };
+    saveProfile(newProfile);
+    setBrandProfile(newProfile);
     setView(ViewState.CALENDAR);
   };
 
   const renderContent = () => {
     switch (view) {
-      case ViewState.LANDING:
-        return (
-          <div className="flex flex-col items-center justify-center min-h-[80vh] text-center px-4">
-             <div className="bg-emerald-100 p-4 rounded-full mb-6">
-                <LayoutDashboard className="w-12 h-12 text-emerald-600" />
-             </div>
-             <h1 className="text-5xl font-extrabold text-slate-900 mb-6 tracking-tight">
-               Kawayan <span className="text-emerald-600">AI</span>
-             </h1>
-             <p className="text-xl text-slate-600 max-w-2xl mb-10 leading-relaxed">
-               The intelligent content engine designed for <span className="font-semibold text-slate-800">Philippine MSMEs</span>. 
-               Automate your social media with culturally resonant Taglish content.
-             </p>
-             <div className="flex gap-4">
-               <button 
-                 onClick={() => setView(ViewState.SURVEY)}
-                 className="bg-emerald-600 text-white px-8 py-4 rounded-full font-bold text-lg hover:bg-emerald-700 transition shadow-lg hover:shadow-emerald-200"
-               >
-                 Get Started (SME)
-               </button>
-               <button 
-                 onClick={() => setView(ViewState.ADMIN)}
-                 className="bg-white text-slate-700 border border-slate-200 px-8 py-4 rounded-full font-bold text-lg hover:bg-slate-50 transition shadow-sm"
-               >
-                 Admin Login
-               </button>
-             </div>
-             <p className="mt-8 text-sm text-slate-400">Powered by Google Gemini 2.5</p>
-          </div>
-        );
+      case ViewState.LOGIN:
+        return <Login onLogin={handleLogin} onNavigate={setView} />;
+      case ViewState.ADMIN_LOGIN:
+        return <Login onLogin={handleLogin} onNavigate={setView} isAdminLogin={true} />;
       case ViewState.SURVEY:
         return <BrandSurvey onComplete={handleSurveyComplete} />;
       case ViewState.CALENDAR:
-        return brandProfile ? <ContentCalendar profile={brandProfile} /> : <div>Error: No Profile</div>;
-      case ViewState.ADMIN:
-        return <AdminDashboard />;
+        return (user && brandProfile) ? <ContentCalendar profile={brandProfile} userId={user.id} /> : <div>Loading...</div>;
+      case ViewState.ADMIN_DASHBOARD:
+        return (user && user.role === 'admin') ? <AdminDashboard /> : <div className="text-center p-10">Access Denied</div>;
       default:
-        return <div>Unknown View</div>;
+        return <Login onLogin={handleLogin} onNavigate={setView} />;
     }
   };
 
+  // Safe navigation guard
+  const showNav = user !== null;
+
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Navigation */}
-      <nav className="bg-white border-b border-slate-100 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center cursor-pointer" onClick={() => setView(ViewState.LANDING)}>
-               <span className="text-2xl font-bold text-slate-800">Kawayan<span className="text-emerald-500">.</span></span>
-            </div>
-            {view !== ViewState.LANDING && (
+    <div className="min-h-screen flex flex-col bg-slate-50">
+      {/* Navigation - Only show if logged in */}
+      {showNav && (
+        <nav className="bg-white border-b border-slate-100 sticky top-0 z-50">
+          <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between h-16">
+              <div className="flex items-center cursor-pointer">
+                 <span className="text-2xl font-bold text-slate-800 tracking-tight">Kawayan<span className="text-emerald-500">.</span></span>
+                 {user?.role === 'admin' && <span className="ml-2 px-2 py-0.5 bg-slate-800 text-white text-[10px] uppercase font-bold rounded">Admin</span>}
+              </div>
+              
               <div className="flex items-center space-x-4">
                 {view === ViewState.CALENDAR && (
-                   <button onClick={() => setView(ViewState.CALENDAR)} className="flex items-center gap-2 text-slate-600 hover:text-emerald-600 px-3 py-2 rounded-md transition font-medium text-sm bg-slate-50">
-                     <Calendar className="w-4 h-4" /> Calendar
-                   </button>
+                   <div className="hidden md:flex items-center gap-2 text-slate-500 text-sm mr-4">
+                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                     {user?.businessName}
+                   </div>
                 )}
-                {view === ViewState.ADMIN && (
-                   <span className="flex items-center gap-2 text-rose-600 bg-rose-50 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
-                     <ShieldCheck className="w-3 h-3" /> Admin Mode
-                   </span>
-                )}
+                
                 <div className="h-6 w-px bg-slate-200"></div>
                 <button 
-                  onClick={() => {
-                    setView(ViewState.LANDING);
-                    setBrandProfile(null);
-                  }}
-                  className="text-slate-400 hover:text-slate-600 transition"
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 text-slate-400 hover:text-rose-600 transition text-sm font-medium"
                 >
-                  <LogOut className="w-5 h-5" />
+                  <LogOut className="w-4 h-4" /> <span className="hidden md:inline">Logout</span>
                 </button>
               </div>
-            )}
+            </div>
           </div>
-        </div>
-      </nav>
+        </nav>
+      )}
 
       {/* Main Content */}
-      <main className="flex-grow bg-slate-50">
-        <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 h-full">
+      <main className={`flex-grow ${!showNav ? 'flex items-center justify-center' : ''}`}>
+        <div className={`w-full ${showNav ? 'max-w-[1600px] mx-auto py-6 px-4 sm:px-6 lg:px-8' : 'w-full'}`}>
           {renderContent()}
         </div>
       </main>
       
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-100 py-6">
-        <div className="max-w-7xl mx-auto px-4 text-center text-slate-400 text-sm">
-          &copy; 2025 Kawayan AI. Designed for Philippine SMEs.
+      <footer className="bg-white border-t border-slate-100 py-6 mt-auto">
+        <div className="max-w-7xl mx-auto px-4 text-center">
+          <p className="text-slate-400 text-sm">&copy; 2025 Kawayan AI. Designed for Philippine SMEs.</p>
+          {!user && view !== ViewState.ADMIN_LOGIN && (
+             <button 
+               onClick={() => setView(ViewState.ADMIN_LOGIN)} 
+               className="mt-4 text-xs text-slate-200 hover:text-slate-400 transition flex items-center gap-1 mx-auto"
+             >
+               <Lock className="w-3 h-3"/> Staff Access
+             </button>
+          )}
         </div>
       </footer>
     </div>

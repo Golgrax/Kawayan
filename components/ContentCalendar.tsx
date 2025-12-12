@@ -1,53 +1,90 @@
 import React, { useState, useEffect } from 'react';
 import { BrandProfile, ContentIdea, GeneratedPost } from '../types';
-import { generateContentPlan, generatePostCaptionAndImagePrompt, generateImageFromPrompt } from '../services/geminiService';
-import { Calendar as CalendarIcon, Loader2, Plus, Wand2, Image as ImageIcon, CheckCircle, RefreshCcw } from 'lucide-react';
+import { generateContentPlan, generatePostCaptionAndImagePrompt, generateImageFromPrompt, getTrendingTopicsPH } from '../services/geminiService';
+import { savePost, getUserPosts } from '../services/storage';
+import { Calendar as CalendarIcon, Loader2, Plus, Wand2, Image as ImageIcon, RefreshCcw, Flame, ThumbsUp, MessageCircle, Share2, MoreHorizontal, LayoutList, LayoutGrid, Save, Check } from 'lucide-react';
 
 interface Props {
   profile: BrandProfile;
+  userId: string;
 }
 
-const ContentCalendar: React.FC<Props> = ({ profile }) => {
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [currentDate, setCurrentDate] = useState(new Date(2025, 9, 1)); // Oct 2025 default
   const [loadingPlan, setLoadingPlan] = useState(false);
   const [ideas, setIdeas] = useState<ContentIdea[]>([]);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [generatingPost, setGeneratingPost] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<GeneratedPost | null>(null);
   const [loadingImage, setLoadingImage] = useState(false);
+  const [trendingTopics, setTrendingTopics] = useState<string[]>([]);
+  const [posts, setPosts] = useState<GeneratedPost[]>([]);
 
   useEffect(() => {
-    // Initial load of content plan
-    handleGeneratePlan();
+    loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const loadData = async () => {
+    // Load trends
+    const trends = await getTrendingTopicsPH();
+    setTrendingTopics(trends);
+    
+    // Load saved posts from DB
+    const savedPosts = getUserPosts(userId);
+    setPosts(savedPosts);
+    
+    // If no ideas and no posts, generate initial plan suggestion? 
+    // For now, let user click generate.
+  };
+
   const handleGeneratePlan = async () => {
     setLoadingPlan(true);
-    const newIdeas = await generateContentPlan(profile, "October"); // Mocking October
+    const monthName = currentDate.toLocaleString('default', { month: 'long' });
+    const newIdeas = await generateContentPlan(profile, monthName);
     setIdeas(newIdeas);
     setLoadingPlan(false);
   };
 
   const handleDayClick = (day: number) => {
     setSelectedDay(day);
-    // Reset selection if clicking a different day
-    if (generatedContent && new Date(generatedContent.date).getDate() !== day) {
-      setGeneratedContent(null);
+    // Check if we already have a saved post for this day
+    const existingPost = posts.find(p => {
+       const d = new Date(p.date);
+       return d.getDate() === day && d.getMonth() === currentDate.getMonth();
+    });
+
+    if (existingPost) {
+      setGeneratedContent(existingPost);
+    } else {
+      // If no post but we have an idea, reset content but keep selection
+      if (generatedContent && new Date(generatedContent.date).getDate() !== day) {
+        setGeneratedContent(null);
+      } else if (!generatedContent) {
+        // null
+      }
     }
   };
 
   const handleGeneratePost = async (idea: ContentIdea) => {
     setGeneratingPost(true);
-    setGeneratedContent(null);
+    // Draft locally first
     try {
-      const { caption, imagePrompt } = await generatePostCaptionAndImagePrompt(profile, idea.topic);
+      const result = await generatePostCaptionAndImagePrompt(profile, idea.topic);
       const newPost: GeneratedPost = {
         id: Date.now().toString(),
-        date: `2025-10-${idea.day.toString().padStart(2, '0')}`,
+        userId,
+        date: new Date(currentDate.getFullYear(), currentDate.getMonth(), idea.day).toISOString().split('T')[0],
         topic: idea.topic,
-        caption,
-        imagePrompt,
-        status: 'Draft'
+        caption: result.caption,
+        imagePrompt: result.imagePrompt,
+        viralityScore: result.viralityScore,
+        viralityReason: result.viralityReason,
+        status: 'Draft',
+        format: idea.format
       };
       setGeneratedContent(newPost);
     } catch (e) {
@@ -69,161 +106,355 @@ const ContentCalendar: React.FC<Props> = ({ profile }) => {
     setLoadingImage(false);
   };
 
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-full">
-      {/* Calendar Grid */}
-      <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-3">
-            <CalendarIcon className="w-6 h-6 text-emerald-600" />
-            <h2 className="text-2xl font-bold text-slate-800">Content Plan: October 2025</h2>
-          </div>
-          <button 
-            onClick={handleGeneratePlan}
-            disabled={loadingPlan}
-            className="text-sm flex items-center gap-2 text-emerald-600 font-medium hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition"
-          >
-            {loadingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
-            Refresh Plan
-          </button>
-        </div>
+  const handleSavePost = () => {
+    if (generatedContent) {
+      savePost(generatedContent);
+      setPosts(prev => {
+        const idx = prev.findIndex(p => p.id === generatedContent.id);
+        if (idx >= 0) {
+          const newPosts = [...prev];
+          newPosts[idx] = generatedContent;
+          return newPosts;
+        }
+        return [...prev, generatedContent];
+      });
+      alert("Post Saved to Database!");
+    }
+  };
 
-        {loadingPlan ? (
-          <div className="h-96 flex flex-col items-center justify-center text-slate-400">
-            <Loader2 className="w-10 h-10 animate-spin mb-4 text-emerald-500" />
-            <p>Brainstorming with Kawayan AI...</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-5 gap-4">
-            {ideas.map((idea) => (
-              <div
-                key={idea.day}
-                onClick={() => handleDayClick(idea.day)}
-                className={`aspect-[4/5] rounded-xl border-2 p-3 cursor-pointer transition-all hover:shadow-md relative group flex flex-col justify-between ${
-                  selectedDay === idea.day
-                    ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
-                    : 'border-slate-100 bg-slate-50 hover:border-emerald-200'
-                }`}
-              >
-                <div>
-                  <span className={`inline-block w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mb-2 ${selectedDay === idea.day ? 'bg-emerald-500 text-white' : 'bg-white text-slate-500'}`}>
-                    {idea.day}
-                  </span>
-                  <h4 className="font-semibold text-slate-800 text-sm leading-tight line-clamp-2">{idea.title}</h4>
-                </div>
-                <div>
-                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wide bg-white px-2 py-1 rounded border border-slate-200">{idea.format}</span>
-                </div>
-              </div>
-            ))}
-            {/* Fillers for empty days visual */}
-            {Array.from({ length: Math.max(0, 10 - ideas.length) }).map((_, i) => (
-               <div key={`empty-${i}`} className="aspect-[4/5] rounded-xl border border-dashed border-slate-200 flex items-center justify-center text-slate-300">
-                 <Plus className="w-6 h-6" />
-               </div>
-            ))}
-          </div>
-        )}
+  // --- Calendar Grid Helpers ---
+  const getDaysInMonth = (date: Date) => {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  };
+  
+  const getFirstDayOfMonth = (date: Date) => {
+    return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+  };
+
+  const renderCalendarGrid = () => {
+    const totalDays = getDaysInMonth(currentDate);
+    const startDay = getFirstDayOfMonth(currentDate);
+    const slots = [];
+
+    // Empty slots for previous month
+    for (let i = 0; i < startDay; i++) {
+      slots.push(<div key={`empty-${i}`} className="h-24 bg-slate-50 border-b border-r border-slate-100" />);
+    }
+
+    // Days
+    for (let day = 1; day <= totalDays; day++) {
+      const idea = ideas.find(i => i.day === day);
+      const post = posts.find(p => {
+         const d = new Date(p.date);
+         return d.getDate() === day && d.getMonth() === currentDate.getMonth();
+      });
+      const isSelected = selectedDay === day;
+
+      slots.push(
+        <div 
+          key={day}
+          onClick={() => handleDayClick(day)}
+          className={`h-28 border-b border-r border-slate-100 p-2 relative cursor-pointer hover:bg-emerald-50/30 transition group ${isSelected ? 'bg-emerald-50 ring-inset ring-2 ring-emerald-500' : 'bg-white'}`}
+        >
+          <span className={`text-xs font-semibold ${isSelected ? 'text-emerald-700' : 'text-slate-500'}`}>{day}</span>
+          
+          {post ? (
+             <div className="mt-1 p-1.5 rounded-lg bg-emerald-100 border border-emerald-200 text-[10px] text-emerald-800 font-medium truncate shadow-sm">
+                {post.status === 'Scheduled' && <Check className="w-3 h-3 inline mr-1"/>}
+                {post.topic}
+             </div>
+          ) : idea ? (
+            <div className="mt-1 p-1.5 rounded-lg bg-indigo-50 border border-indigo-100 text-[10px] text-indigo-700 font-medium truncate opacity-80 group-hover:opacity-100">
+               {idea.format}: {idea.title}
+            </div>
+          ) : null}
+
+          {/* Add Button on Hover if Empty */}
+          {!post && !idea && (
+             <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                <Plus className="w-5 h-5 text-slate-300" />
+             </div>
+          )}
+        </div>
+      );
+    }
+    
+    return slots;
+  };
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-100px)] gap-6">
+      
+      {/* Top Bar: Trends & Controls */}
+      <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+         <div className="flex items-center gap-3">
+             <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-50 text-orange-600 rounded-full border border-orange-100 text-xs font-bold uppercase tracking-wider">
+               <Flame className="w-3 h-3" /> Trending Now
+             </div>
+             <div className="flex gap-2 overflow-x-auto max-w-lg pb-1 md:pb-0">
+               {trendingTopics.map((t, i) => (
+                 <span key={i} className="text-sm text-slate-600 font-medium whitespace-nowrap bg-slate-50 px-2 py-1 rounded-md border border-slate-100">#{t.replace(/\s+/g, '')}</span>
+               ))}
+             </div>
+         </div>
+         <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setViewMode('grid')}
+              className={`p-2 rounded-lg transition ${viewMode === 'grid' ? 'bg-slate-100 text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              <LayoutGrid className="w-5 h-5" />
+            </button>
+            <button 
+               onClick={() => setViewMode('list')}
+               className={`p-2 rounded-lg transition ${viewMode === 'list' ? 'bg-slate-100 text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+               <LayoutList className="w-5 h-5" />
+            </button>
+         </div>
       </div>
 
-      {/* Editor Panel */}
-      <div className="lg:col-span-1 bg-white rounded-2xl shadow-xl border border-slate-200 flex flex-col overflow-hidden h-[calc(100vh-140px)] sticky top-6">
-        {selectedDay ? (
-          <div className="flex flex-col h-full">
-            <div className="p-6 border-b border-slate-100 bg-slate-50">
-              <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Day {selectedDay}</span>
-              <h3 className="text-xl font-bold text-slate-900 mt-1">
-                {ideas.find(i => i.day === selectedDay)?.title || "Custom Post"}
-              </h3>
-              <p className="text-sm text-slate-500 mt-2 line-clamp-3">
-                {ideas.find(i => i.day === selectedDay)?.topic}
-              </p>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {!generatedContent ? (
-                <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
-                  <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center">
-                    <Wand2 className="w-8 h-8 text-emerald-600" />
-                  </div>
-                  <div>
-                    <h4 className="text-lg font-semibold text-slate-800">Ready to create?</h4>
-                    <p className="text-slate-500 text-sm max-w-[200px] mx-auto">Generate Taglish captions and image ideas instantly.</p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      const idea = ideas.find(i => i.day === selectedDay);
-                      if (idea) handleGeneratePost(idea);
-                    }}
-                    disabled={generatingPost}
-                    className="w-full bg-emerald-600 text-white py-3 rounded-lg font-semibold hover:bg-emerald-700 transition disabled:opacity-50"
-                  >
-                    {generatingPost ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin" /> Drafting...
-                      </span>
-                    ) : 'Generate Content'}
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                  {/* Generated Caption */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase">Caption (Taglish)</label>
-                    <textarea 
-                      className="w-full p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-sm leading-relaxed focus:ring-2 focus:ring-emerald-500 outline-none resize-none h-48"
-                      value={generatedContent.caption}
-                      readOnly
-                    />
-                  </div>
-
-                  {/* Generated Image/Prompt */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase flex justify-between items-center">
-                      Visuals
-                      {!generatedContent.imageUrl && (
-                         <button 
-                           onClick={handleGenerateImage}
-                           disabled={loadingImage}
-                           className="text-emerald-600 text-[10px] bg-emerald-50 px-2 py-1 rounded hover:bg-emerald-100 transition flex items-center gap-1"
-                         >
-                            {loadingImage ? <Loader2 className="w-3 h-3 animate-spin"/> : <ImageIcon className="w-3 h-3"/>}
-                            Generate Image
-                         </button>
-                      )}
-                    </label>
-                    
-                    {generatedContent.imageUrl ? (
-                      <div className="relative group">
-                         <img src={generatedContent.imageUrl} alt="Generated" className="w-full rounded-xl border border-slate-200 shadow-sm" />
-                         <div className="absolute top-2 right-2 bg-emerald-500 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1 shadow-lg">
-                           <CheckCircle className="w-3 h-3" /> AI Generated
-                         </div>
-                      </div>
-                    ) : (
-                      <div className="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-300 text-slate-500 text-xs italic">
-                        <p className="mb-2"><span className="font-semibold text-slate-700">Prompt Idea:</span> {generatedContent.imagePrompt}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            {generatedContent && (
-               <div className="p-6 border-t border-slate-100 bg-white">
-                 <button className="w-full bg-slate-900 text-white py-3 rounded-lg font-semibold hover:bg-slate-800 transition">
-                   Schedule Post
-                 </button>
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 overflow-hidden">
+        {/* LEFT: Calendar Grid or List */}
+        <div className="xl:col-span-7 flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          {/* Calendar Header */}
+          <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+             <div className="flex items-center gap-2">
+               <h2 className="text-lg font-bold text-slate-800">{currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}</h2>
+               <div className="flex gap-1 ml-4">
+                  <button className="p-1 hover:bg-slate-200 rounded" onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth()-1)))}>&lt;</button>
+                  <button className="p-1 hover:bg-slate-200 rounded" onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth()+1)))}>&gt;</button>
                </div>
-            )}
+             </div>
+             <button 
+                onClick={handleGeneratePlan}
+                disabled={loadingPlan}
+                className="text-xs flex items-center gap-2 bg-white border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 px-3 py-2 rounded-lg transition shadow-sm"
+              >
+                {loadingPlan ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />}
+                Auto-Plan Month
+              </button>
           </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center">
-            <CalendarIcon className="w-12 h-12 mb-4 opacity-20" />
-            <p>Select a day from the calendar to start creating content.</p>
-          </div>
-        )}
+
+          {viewMode === 'grid' ? (
+             <div className="flex-1 overflow-y-auto">
+               <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
+                 {DAYS.map(d => <div key={d} className="py-2 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">{d}</div>)}
+               </div>
+               <div className="grid grid-cols-7">
+                  {renderCalendarGrid()}
+               </div>
+             </div>
+          ) : (
+             <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {/* LIST VIEW */}
+                {Array.from({length: getDaysInMonth(currentDate)}, (_, i) => i + 1).map(day => {
+                   const idea = ideas.find(i => i.day === day);
+                   const post = posts.find(p => new Date(p.date).getDate() === day);
+                   if (!idea && !post) return null; // Hide empty days in list view? Or show compact?
+                   
+                   return (
+                     <div 
+                        key={day} 
+                        onClick={() => handleDayClick(day)}
+                        className={`flex gap-4 p-4 rounded-xl border transition cursor-pointer ${selectedDay === day ? 'border-emerald-500 bg-emerald-50' : 'border-slate-100 hover:border-emerald-200'}`}
+                     >
+                        <div className="w-12 flex flex-col items-center justify-center bg-white rounded-lg border border-slate-200 h-12">
+                           <span className="text-xs text-slate-500 font-bold uppercase">{currentDate.toLocaleString('default', {month:'short'})}</span>
+                           <span className="text-lg font-bold text-slate-800">{day}</span>
+                        </div>
+                        <div className="flex-1">
+                           {post ? (
+                              <div>
+                                 <div className="flex items-center gap-2 mb-1">
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 uppercase">{post.status}</span>
+                                    <h4 className="font-bold text-slate-800">{post.topic}</h4>
+                                 </div>
+                                 <p className="text-sm text-slate-500 line-clamp-1">{post.caption}</p>
+                              </div>
+                           ) : (
+                              <div>
+                                 <div className="flex items-center gap-2 mb-1">
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 uppercase">Idea</span>
+                                    <h4 className="font-bold text-slate-800">{idea?.title}</h4>
+                                 </div>
+                                 <p className="text-sm text-slate-500">{idea?.topic}</p>
+                              </div>
+                           )}
+                        </div>
+                     </div>
+                   )
+                })}
+             </div>
+          )}
+        </div>
+
+        {/* RIGHT: Editor & Preview */}
+        <div className="xl:col-span-5 flex flex-col bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden h-full">
+          {selectedDay ? (
+            <div className="flex flex-col h-full">
+              {/* Header */}
+              <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                <div>
+                  <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">
+                     {currentDate.toLocaleString('default', {month:'long'})} {selectedDay}
+                  </span>
+                  <h3 className="text-sm font-bold text-slate-900 truncate max-w-[200px]">
+                    {posts.find(p => new Date(p.date).getDate() === selectedDay)?.topic || ideas.find(i => i.day === selectedDay)?.title || "Create Post"}
+                  </h3>
+                </div>
+                <button 
+                  className="bg-emerald-600 text-white text-sm px-4 py-2 rounded-lg font-medium hover:bg-emerald-700 transition shadow-md shadow-emerald-200 flex items-center gap-2"
+                  onClick={() => {
+                     const idea = ideas.find(i => i.day === selectedDay);
+                     // If no idea exists for this random day, create a generic one
+                     const fallbackIdea: ContentIdea = { day: selectedDay, title: "Custom Post", topic: "General Update", format: "Image" };
+                     handleGeneratePost(idea || fallbackIdea);
+                  }}
+                  disabled={generatingPost}
+                >
+                  {generatingPost ? <Loader2 className="w-4 h-4 animate-spin" /> : (generatedContent ? <span className="flex items-center gap-1"><RefreshCcw className="w-3 h-3"/> Rewrite</span> : <span className="flex items-center gap-1"><Wand2 className="w-3 h-3"/> AI Draft</span>)}
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-0 bg-slate-100 flex flex-col items-center">
+                
+                {!generatedContent ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center p-8">
+                    <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
+                      <Wand2 className="w-10 h-10 text-emerald-500" />
+                    </div>
+                    <h4 className="text-lg font-bold text-slate-800">Ready to create?</h4>
+                    <p className="text-slate-500 text-sm max-w-[250px] mt-2">
+                       {ideas.find(i => i.day === selectedDay) 
+                         ? `Idea: "${ideas.find(i => i.day === selectedDay)?.topic}"`
+                         : "Select 'AI Draft' to generate content for this day."}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="w-full max-w-sm py-8 px-4">
+                     {/* Virality Score */}
+                     <div className="mb-6 bg-white rounded-xl p-4 shadow-sm border border-slate-200">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                            <Flame className="w-3 h-3 text-orange-500"/> Virality Potential
+                          </span>
+                          <span className={`text-lg font-black ${
+                            (generatedContent.viralityScore || 0) > 75 ? 'text-emerald-600' : 
+                            (generatedContent.viralityScore || 0) > 50 ? 'text-orange-500' : 'text-slate-500'
+                          }`}>
+                            {generatedContent.viralityScore}/100
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-2 mb-3">
+                          <div 
+                            className={`h-2 rounded-full transition-all duration-1000 ${
+                               (generatedContent.viralityScore || 0) > 75 ? 'bg-gradient-to-r from-emerald-400 to-emerald-600' : 'bg-gradient-to-r from-orange-300 to-orange-500'
+                            }`} 
+                            style={{ width: `${generatedContent.viralityScore}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-slate-600 italic leading-relaxed">
+                          "{generatedContent.viralityReason}"
+                        </p>
+                     </div>
+
+                     {/* Phone Preview */}
+                     <div className="bg-white rounded-[2rem] border-[8px] border-slate-800 shadow-2xl overflow-hidden relative mx-auto">
+                        <div className="h-6 bg-slate-800 w-full flex justify-between px-6 items-center">
+                           <div className="w-12 h-3 bg-black rounded-full" />
+                           <div className="flex gap-1">
+                             <div className="w-3 h-3 bg-slate-600 rounded-full" />
+                             <div className="w-3 h-3 bg-slate-600 rounded-full" />
+                           </div>
+                        </div>
+
+                        <div className="p-3 border-b border-slate-100 flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-xs border border-emerald-200">
+                             {profile.businessName.substring(0,2).toUpperCase()}
+                          </div>
+                          <div className="flex-1">
+                             <p className="text-xs font-bold text-slate-900">{profile.businessName}</p>
+                             <p className="text-[10px] text-slate-500">Sponsored • Kawayan AI</p>
+                          </div>
+                          <MoreHorizontal className="w-4 h-4 text-slate-400" />
+                        </div>
+
+                        <div className="aspect-square bg-slate-100 relative group">
+                          {generatedContent.imageUrl ? (
+                            <img src={generatedContent.imageUrl} alt="Generated" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center">
+                               <ImageIcon className="w-8 h-8 text-slate-300 mb-2" />
+                               <p className="text-xs text-slate-400 mb-4 line-clamp-3">{generatedContent.imagePrompt}</p>
+                               <button 
+                                 onClick={handleGenerateImage}
+                                 disabled={loadingImage}
+                                 className="bg-slate-800 text-white text-xs px-4 py-2 rounded-full flex items-center gap-2 hover:bg-slate-700 transition"
+                               >
+                                  {loadingImage ? <Loader2 className="w-3 h-3 animate-spin"/> : <Wand2 className="w-3 h-3"/>}
+                                  Generate Visual
+                               </button>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="p-3 flex justify-between items-center text-slate-700">
+                          <div className="flex gap-4">
+                             <ThumbsUp className="w-5 h-5" />
+                             <MessageCircle className="w-5 h-5" />
+                             <Share2 className="w-5 h-5" />
+                          </div>
+                        </div>
+
+                        <div className="px-3 pb-6">
+                          <p className="text-sm text-slate-900 font-bold mb-1">{Math.floor(Math.random() * 500) + 10} likes</p>
+                          <p className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
+                             <span className="font-bold mr-1">{profile.businessName}</span>
+                             {generatedContent.caption}
+                          </p>
+                          <p className="text-[10px] text-slate-400 mt-2 uppercase">View all comments</p>
+                        </div>
+                     </div>
+                     
+                     <div className="mt-6 p-4 rounded-xl bg-slate-100 border border-slate-200 text-xs text-slate-500">
+                        <p className="font-bold mb-1 uppercase text-[10px]">Image Prompt Used:</p>
+                        <p className="italic opacity-70">{generatedContent.imagePrompt}</p>
+                     </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Actions */}
+              <div className="p-4 border-t border-slate-200 bg-white flex gap-3">
+                 <button 
+                    onClick={handleSavePost}
+                    disabled={!generatedContent}
+                    className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 transition text-sm flex items-center justify-center gap-2"
+                 >
+                   <Save className="w-4 h-4"/> Save Draft
+                 </button>
+                 <button 
+                   disabled={!generatedContent}
+                   className="flex-1 py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800 transition text-sm shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                   onClick={() => {
+                     if(generatedContent) {
+                       setGeneratedContent({...generatedContent, status: 'Scheduled'});
+                       handleSavePost();
+                     }
+                   }}
+                 >
+                   Schedule
+                 </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-slate-300 p-8 text-center bg-slate-50/50">
+              <CalendarIcon className="w-16 h-16 mb-4 opacity-20" />
+              <h3 className="text-lg font-medium text-slate-400">No Date Selected</h3>
+              <p className="text-sm max-w-xs mx-auto mt-2">Click a day on the calendar to start creating content.</p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
