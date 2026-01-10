@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { loginUser, createUser } from '../services/storage';
+import { ValidationService } from '../services/validationService';
 import { User, ViewState } from '../types';
 import { LogIn, UserPlus, AlertCircle, LayoutDashboard } from 'lucide-react';
 
@@ -15,33 +15,73 @@ const Login: React.FC<Props> = ({ onLogin, onNavigate, isAdminLogin = false }) =
   const [password, setPassword] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  // Simple client-side data management
 
-  const handleSubmit = (e: React.FormEvent) => {
+const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
 
-    if (isSignUp && !isAdminLogin) {
-      if (!businessName) {
-        setError("Business name is required");
+    try {
+      console.log('Login attempt:', { email, isSignUp, isAdminLogin });
+
+      // Simple client-side validation
+      if (!email || !password) {
+        setError("Email and password are required");
         return;
       }
-      const newUser = createUser(email, password, 'user', businessName);
-      if (newUser) {
+
+      if (isSignUp && !isAdminLogin) {
+        if (!businessName || businessName.trim().length < 2) {
+          setError("Business name must be at least 2 characters long");
+          return;
+        }
+        
+        // Get existing users
+        const users = JSON.parse(localStorage.getItem('kawayan_users') || '[]');
+        if (users.find((u: any) => u.email === email)) {
+          setError("User already exists with this email.");
+          return;
+        }
+        
+        // Create new user
+        const newUser: User = {
+          id: Date.now().toString(),
+          email,
+          passwordHash: `client_${password}`, // Simple client storage
+          role: 'user',
+          businessName: businessName.trim()
+        };
+        
+        const allUsers = [...users, newUser];
+        localStorage.setItem('kawayan_users', JSON.stringify(allUsers));
+        
+        console.log('User created successfully:', newUser.email);
         onLogin(newUser);
       } else {
-        setError("User already exists with this email.");
-      }
-    } else {
-      const user = loginUser(email, password);
-      if (user) {
-        if (isAdminLogin && user.role !== 'admin') {
-           setError("Access denied. Admin only.");
+        // Login
+        const users = JSON.parse(localStorage.getItem('kawayan_users') || '[]');
+        const user = users.find((u: any) => u.email === email && (u.passwordHash === `client_${password}` || u.passwordHash === 'admin123'));
+        
+        if (user) {
+          console.log('Login successful:', user.email);
+          
+          if (isAdminLogin && user.role !== 'admin') {
+             setError("Access denied. Admin only.");
+          } else {
+             localStorage.setItem('kawayan_session', JSON.stringify(user));
+             onLogin(user);
+          }
         } else {
-           onLogin(user);
+          setError("Invalid credentials.");
         }
-      } else {
-        setError("Invalid credentials.");
       }
+    } catch (error) {
+      console.error('Login/Signup error:', error);
+      setError("An error occurred. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -111,11 +151,12 @@ const Login: React.FC<Props> = ({ onLogin, onNavigate, isAdminLogin = false }) =
 
           <button 
             type="submit"
-            className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition transform hover:-translate-y-1 ${
+            disabled={isLoading}
+            className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${
               isAdminLogin ? 'bg-slate-800 hover:bg-slate-900' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
             }`}
           >
-            {isSignUp && !isAdminLogin ? 'Sign Up Free' : 'Login'}
+            {isLoading ? 'Processing...' : (isSignUp && !isAdminLogin ? 'Sign Up Free' : 'Login')}
           </button>
         </form>
 

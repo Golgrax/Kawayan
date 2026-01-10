@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrandProfile, ContentIdea, GeneratedPost } from '../types';
 import { generateContentPlan, generatePostCaptionAndImagePrompt, generateImageFromPrompt, getTrendingTopicsPH } from '../services/geminiService';
-import { savePost, getUserPosts } from '../services/storage';
 import { 
   Loader2, Plus, Wand2, Image as ImageIcon, RefreshCcw, Flame, 
   ThumbsUp, MessageCircle, Share2, MoreHorizontal, LayoutList, LayoutGrid, 
@@ -33,6 +32,51 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
   const [loadingImage, setLoadingImage] = useState(false);
   const [trendingTopics, setTrendingTopics] = useState<string[]>([]);
   const [posts, setPosts] = useState<GeneratedPost[]>([]);
+  // Simple client-side data management
+  const getUserPosts = async (userId: string): Promise<any[]> => {
+    const posts = JSON.parse(localStorage.getItem('kawayan_posts') || '[]');
+    return posts.filter((p: any) => p.userId === userId);
+  };
+  
+  const saveProfile = async (profile: any) => {
+    const profiles = JSON.parse(localStorage.getItem('kawayan_profiles') || '[]');
+    const existingIndex = profiles.findIndex((p: any) => p.userId === profile.userId);
+    
+    if (existingIndex >= 0) {
+      profiles[existingIndex] = profile;
+    } else {
+      profiles.push(profile);
+    }
+    
+    localStorage.setItem('kawayan_profiles', JSON.stringify(profiles));
+  };
+
+  const savePost = async (post: any) => {
+    const posts = JSON.parse(localStorage.getItem('kawayan_posts') || '[]');
+    const existingIndex = posts.findIndex((p: any) => p.id === post.id);
+    
+    if (existingIndex >= 0) {
+      posts[existingIndex] = post;
+    } else {
+      posts.push(post);
+    }
+    
+    localStorage.setItem('kawayan_posts', JSON.stringify(posts));
+  };
+
+  const handleSurveyComplete = async (profileData: BrandProfile) => {
+    if (!user) return;
+    const newProfile = { ...profileData, userId: user.id };
+    try {
+      console.log('Saving profile:', newProfile.businessName);
+      await saveProfile(newProfile);
+      setBrandProfile(newProfile);
+      setView(ViewState.CALENDAR);
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      alert('Failed to save profile. Please try again.');
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -40,10 +84,16 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
   }, []);
 
   const loadData = async () => {
-    const trends = await getTrendingTopicsPH();
-    setTrendingTopics(trends);
-    const savedPosts = getUserPosts(userId);
-    setPosts(savedPosts);
+    try {
+      console.log('Loading calendar data for user:', userId);
+      const trends = await getTrendingTopicsPH();
+      setTrendingTopics(trends);
+      const savedPosts = await getUserPosts(userId);
+      setPosts(savedPosts);
+      console.log('Loaded posts:', savedPosts.length);
+    } catch (error) {
+      console.error('Error loading calendar data:', error);
+    }
   };
 
   const handleGeneratePlan = async () => {
@@ -109,19 +159,26 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
     setLoadingImage(false);
   };
 
-  const handleSavePost = () => {
+  const handleSavePost = async () => {
     if (generatedContent) {
-      savePost(generatedContent);
-      setPosts(prev => {
-        const idx = prev.findIndex(p => p.id === generatedContent.id);
-        if (idx >= 0) {
-          const newPosts = [...prev];
-          newPosts[idx] = generatedContent;
-          return newPosts;
-        }
-        return [...prev, generatedContent];
-      });
-      alert("Post Saved to Database!");
+      try {
+        console.log('Saving post:', generatedContent.id);
+        await savePost(generatedContent);
+        setPosts(prev => {
+          const idx = prev.findIndex(p => p.id === generatedContent.id);
+          if (idx >= 0) {
+            const newPosts = [...prev];
+            newPosts[idx] = generatedContent;
+            return newPosts;
+          }
+          return [...prev, generatedContent];
+        });
+        console.log('Post saved successfully');
+        alert("Post Saved to Database!");
+      } catch (error) {
+        console.error('Error saving post:', error);
+        alert("Failed to save post. Please try again.");
+      }
     }
   };
 

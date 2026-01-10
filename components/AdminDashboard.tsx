@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { Users, AlertTriangle, TrendingUp, DollarSign, Activity } from 'lucide-react';
+import UniversalDatabaseService from '../services/universalDatabaseService';
 
 const mockChurnData = [
   { name: 'Jan', value: 2 },
@@ -21,6 +22,38 @@ const mockRevenueData = [
 ];
 
 const AdminDashboard: React.FC = () => {
+  const [dbService] = useState(() => new UniversalDatabaseService());
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    activeUsers: 0,
+    totalPostsGenerated: 0,
+    revenue: 0
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        const adminStats = await dbService.getAdminStats();
+        setStats(adminStats);
+      } catch (error) {
+        console.error('Error loading admin stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadStats();
+  }, [dbService]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       
@@ -37,10 +70,10 @@ const AdminDashboard: React.FC = () => {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { label: 'Total MRR', value: '₱68,000', icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-50', trend: '+15% vs last mo' },
-          { label: 'Active SMEs', value: '142', icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', trend: '+8 new this week' },
-          { label: 'Churn Rate', value: '1.2%', icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-50', trend: 'Stable' },
-          { label: 'Generations', value: '12.5k', icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50', trend: '+24% usage' },
+          { label: 'Total Revenue', value: `₱${stats.revenue.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-50', trend: `₱${(stats.revenue / stats.totalUsers || 0).toLocaleString()} per user` },
+          { label: 'Active Users', value: stats.activeUsers.toString(), icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', trend: `${stats.totalUsers - stats.activeUsers} admins` },
+          { label: 'Total Users', value: stats.totalUsers.toString(), icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-50', trend: `${((stats.activeUsers / stats.totalUsers) * 100 || 0).toFixed(1)}% active` },
+          { label: 'Posts Generated', value: stats.totalPostsGenerated.toString(), icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50', trend: `${(stats.totalPostsGenerated / stats.totalUsers || 0).toFixed(1)} per user` },
         ].map((stat, idx) => (
           <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-md transition">
             <div className="flex justify-between items-start mb-4">

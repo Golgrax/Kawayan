@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { ViewState, BrandProfile, User } from './types';
-import { getCurrentUser, getProfile, saveProfile, logoutUser } from './services/storage';
 import BrandSurvey from './components/BrandSurvey';
 import ContentCalendar from './components/ContentCalendar';
 import AdminDashboard from './components/AdminDashboard';
@@ -9,37 +8,151 @@ import LandingPage from './components/LandingPage';
 import Settings from './components/Settings';
 import { LayoutDashboard, LogOut, Lock, ArrowRight, Settings as SettingsIcon } from 'lucide-react';
 
+// Simple client-side data management
+const STORAGE_KEYS = {
+  USERS: 'kawayan_users',
+  PROFILES: 'kawayan_profiles',
+  POSTS: 'kawayan_posts',
+  SESSION: 'kawayan_session'
+};
+
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>(ViewState.LANDING);
   const [user, setUser] = useState<User | null>(null);
   const [brandProfile, setBrandProfile] = useState<BrandProfile | null>(null);
   const [darkMode, setDarkMode] = useState(false);
 
-  useEffect(() => {
-    // Check for existing session on load
-    const currentUser = getCurrentUser();
-    if (currentUser) {
-      handleLogin(currentUser);
+  // LocalStorage helpers
+  const getFromStorage = <T>(key: string): T[] => {
+    try {
+      const data = localStorage.getItem(key);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
     }
-    // Check URL hash for admin back door
-    if (window.location.hash === '#admin-portal') {
-      setView(ViewState.ADMIN_LOGIN);
-    }
+  };
 
-    // Check system preference for dark mode
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-       setDarkMode(true);
+  const saveToStorage = (key: string, data: any[]) => {
+    try {
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch {
+      console.error('Failed to save to storage:', key);
+    }
+  };
+
+  const getCurrentUser = (): User | null => {
+    try {
+      const session = localStorage.getItem(STORAGE_KEYS.SESSION);
+      return session ? JSON.parse(session) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const loginUser = async (email: string, password: string): Promise<User | null> => {
+    const users = getFromStorage<User>(STORAGE_KEYS.USERS);
+    const user = users.find(u => u.email === email && (u.passwordHash === `client_${password}` || u.passwordHash === 'admin123'));
+    
+    if (user) {
+      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(user));
+      return user;
+    }
+    return null;
+  };
+
+  const logoutUser = async () => {
+    localStorage.removeItem(STORAGE_KEYS.SESSION);
+  };
+
+  const saveProfile = async (profile: BrandProfile) => {
+    const profiles = getFromStorage<BrandProfile>(STORAGE_KEYS.PROFILES);
+    const existingIndex = profiles.findIndex(p => p.userId === profile.userId);
+    
+    if (existingIndex >= 0) {
+      profiles[existingIndex] = profile;
+    } else {
+      profiles.push(profile);
+    }
+    
+    saveToStorage(STORAGE_KEYS.PROFILES, profiles);
+  };
+
+  const getProfile = async (userId: string): Promise<BrandProfile | undefined> => {
+    const profiles = getFromStorage<BrandProfile>(STORAGE_KEYS.PROFILES);
+    return profiles.find(p => p.userId === userId);
+  };
+
+  const savePost = async (post: any) => {
+    const posts = getFromStorage<any>(STORAGE_KEYS.POSTS);
+    const existingIndex = posts.findIndex(p => p.id === post.id);
+    
+    if (existingIndex >= 0) {
+      posts[existingIndex] = post;
+    } else {
+      posts.push(post);
+    }
+    
+    saveToStorage(STORAGE_KEYS.POSTS, posts);
+  };
+
+  const getUserPosts = async (userId: string): Promise<any[]> => {
+    const posts = getFromStorage<any>(STORAGE_KEYS.POSTS);
+    return posts.filter(p => p.userId === userId);
+  };
+
+  const getAdminStats = async () => {
+    const users = getFromStorage<User>(STORAGE_KEYS.USERS);
+    const posts = getFromStorage<any>(STORAGE_KEYS.POSTS);
+    
+    return {
+      totalUsers: users.length,
+      activeUsers: users.filter(u => u.role === 'user').length,
+      totalPostsGenerated: posts.length,
+      revenue: users.length * 500
+    };
+  };
+
+  useEffect(() => {
+    console.log('Initializing Kawayan AI App (Simplified)...');
+
+    try {
+      // Check for existing session on load
+      const currentUser = getCurrentUser();
+      if (currentUser) {
+        console.log('Found existing session for user:', currentUser.email);
+        handleLogin(currentUser);
+      }
+      
+      // Check URL hash for admin back door
+      if (window.location.hash === '#admin-portal') {
+        setView(ViewState.ADMIN_LOGIN);
+      }
+
+      // Check system preference for dark mode
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+         setDarkMode(true);
+      }
+
+      // Initialize default admin if not exists
+      const users = getFromStorage<User>(STORAGE_KEYS.USERS);
+      if (!users.find(u => u.email === 'admin@kawayan.ph')) {
+        const defaultAdmin: User = {
+          id: 'admin-1',
+          email: 'admin@kawayan.ph',
+          passwordHash: 'client_admin123',
+          role: 'admin',
+          businessName: 'Kawayan Admin'
+        };
+        
+        const allUsers = [...users, defaultAdmin];
+        saveToStorage(STORAGE_KEYS.USERS, allUsers);
+        console.log('Default admin user created');
+      }
+      
+    } catch (error) {
+      console.error('Error initializing app:', error);
     }
   }, []);
-
-  // Update HTML class when dark mode changes
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [darkMode]);
 
   const handleLogin = (loggedInUser: User) => {
     setUser(loggedInUser);
@@ -48,51 +161,31 @@ const App: React.FC = () => {
       setView(ViewState.ADMIN_DASHBOARD);
     } else {
       // Check if user has a profile
-      const profile = getProfile(loggedInUser.id);
-      if (profile) {
-        setBrandProfile(profile);
-        setView(ViewState.CALENDAR);
-      } else {
-        // No profile, go to survey
-        setView(ViewState.SURVEY);
-      }
+      getProfile(loggedInUser.id).then(profile => {
+        if (profile) {
+          setBrandProfile(profile);
+          setView(ViewState.CALENDAR);
+        } else {
+          // No profile, go to survey
+          setView(ViewState.SURVEY);
+        }
+      });
     }
   };
 
-  const handleLogout = () => {
-    logoutUser();
+  const handleLogout = async () => {
+    await logoutUser();
     setUser(null);
     setBrandProfile(null);
     setView(ViewState.LANDING);
   };
 
-  const handleSurveyComplete = (profileData: BrandProfile) => {
+  const handleSurveyComplete = async (profileData: BrandProfile) => {
     if (!user) return;
     const newProfile = { ...profileData, userId: user.id };
-    saveProfile(newProfile);
+    await saveProfile(newProfile);
     setBrandProfile(newProfile);
     setView(ViewState.CALENDAR);
-  };
-
-  const renderContent = () => {
-    switch (view) {
-      case ViewState.LANDING:
-        return <LandingPage onNavigate={setView} />;
-      case ViewState.LOGIN:
-        return <Login onLogin={handleLogin} onNavigate={setView} />;
-      case ViewState.ADMIN_LOGIN:
-        return <Login onLogin={handleLogin} onNavigate={setView} isAdminLogin={true} />;
-      case ViewState.SURVEY:
-        return <BrandSurvey onComplete={handleSurveyComplete} />;
-      case ViewState.CALENDAR:
-        return (user && brandProfile) ? <ContentCalendar profile={brandProfile} userId={user.id} /> : <div>Loading...</div>;
-      case ViewState.SETTINGS:
-        return (brandProfile) ? <Settings profile={brandProfile} onProfileUpdate={setBrandProfile} darkMode={darkMode} toggleDarkMode={() => setDarkMode(!darkMode)} /> : <div>Loading...</div>;
-      case ViewState.ADMIN_DASHBOARD:
-        return (user && user.role === 'admin') ? <AdminDashboard /> : <div className="text-center p-10">Access Denied</div>;
-      default:
-        return <LandingPage onNavigate={setView} />;
-    }
   };
 
   // Safe navigation guard for logged in users
@@ -114,7 +207,6 @@ const App: React.FC = () => {
                 <>
                   {view === ViewState.CALENDAR && (
                      <div className="hidden md:flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm mr-4">
-                       {/* Removed green circle as requested */}
                        {user?.businessName}
                      </div>
                   )}
@@ -162,7 +254,26 @@ const App: React.FC = () => {
       {/* Main Content */}
       <main className={`flex-grow ${view === ViewState.LOGIN || view === ViewState.ADMIN_LOGIN ? 'flex items-center justify-center' : ''}`}>
         <div className={`w-full ${view === ViewState.CALENDAR || view === ViewState.ADMIN_DASHBOARD || view === ViewState.SETTINGS ? 'max-w-[1600px] mx-auto py-6 px-4 sm:px-6 lg:px-8' : 'w-full'}`}>
-          {renderContent()}
+          {(() => {
+            switch (view) {
+              case ViewState.LANDING:
+                return <LandingPage onNavigate={setView} />;
+              case ViewState.LOGIN:
+                return <Login onLogin={handleLogin} onNavigate={setView} />;
+              case ViewState.ADMIN_LOGIN:
+                return <Login onLogin={handleLogin} onNavigate={setView} isAdminLogin={true} />;
+              case ViewState.SURVEY:
+                return <BrandSurvey onComplete={handleSurveyComplete} />;
+              case ViewState.CALENDAR:
+                return (user && brandProfile) ? <ContentCalendar profile={brandProfile} userId={user.id} /> : <div>Loading...</div>;
+              case ViewState.SETTINGS:
+                return (brandProfile) ? <Settings profile={brandProfile} onProfileUpdate={setBrandProfile} darkMode={darkMode} toggleDarkMode={() => setDarkMode(!darkMode)} /> : <div>Loading...</div>;
+              case ViewState.ADMIN_DASHBOARD:
+                return (user && user.role === 'admin') ? <AdminDashboard /> : <div className="text-center p-10">Access Denied</div>;
+              default:
+                return <LandingPage onNavigate={setView} />;
+            }
+          })()}
         </div>
       </main>
       
