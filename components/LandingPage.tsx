@@ -1,336 +1,375 @@
-import React, { useRef, Suspense } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ViewState } from '../types';
-import { ArrowRight, Sparkles, TrendingUp, Calendar, Zap, CheckCircle2, Play } from 'lucide-react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { Float, MeshDistortMaterial, Environment, Stars } from '@react-three/drei';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { ArrowRight, Sparkles, TrendingUp, Calendar, Zap, CheckCircle2, Play, MousePointer2 } from 'lucide-react';
+import * as THREE from 'three';
 
 interface Props {
   onNavigate: (view: ViewState) => void;
 }
 
-// --- 3D Components ---
-
-const AIOrb = () => {
-  const meshRef = useRef<any>(null);
-
-  useFrame((state) => {
-    if (meshRef.current) {
-      const t = state.clock.getElapsedTime();
-      meshRef.current.rotation.x = t * 0.2;
-      meshRef.current.rotation.y = t * 0.3;
-    }
-  });
-
-  return (
-    <Float speed={4} rotationIntensity={1} floatIntensity={2}>
-      <mesh ref={meshRef} scale={2.4}>
-        <sphereGeometry args={[1, 64, 64]} />
-        <MeshDistortMaterial
-          color="#10b981"
-          attach="material"
-          distort={0.5}
-          speed={2}
-          roughness={0.2}
-          metalness={0.8}
-        />
-      </mesh>
-    </Float>
-  );
-};
-
-const BackgroundParticles = () => {
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10">
-       <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
-       <div className="absolute top-0 right-1/4 w-96 h-96 bg-teal-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
-       <div className="absolute -bottom-32 left-1/3 w-96 h-96 bg-purple-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
-    </div>
-  );
-};
-
-const FeatureCard = ({ icon, title, desc, delay, y }: any) => {
-  return (
-    <motion.div 
-      style={{ y }}
-      initial={{ opacity: 0, y: 50 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.8, delay }}
-      viewport={{ once: true }}
-      className="p-8 rounded-3xl bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border border-white/20 dark:border-slate-700 hover:border-emerald-500/50 hover:shadow-2xl hover:shadow-emerald-500/10 transition group"
-    >
-      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 dark:from-emerald-500 dark:to-teal-700 flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition duration-300">
-        {icon}
-      </div>
-      <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">{title}</h3>
-      <p className="text-slate-600 dark:text-slate-300 leading-relaxed">{desc}</p>
-    </motion.div>
-  );
-};
-
 const LandingPage: React.FC<Props> = ({ onNavigate }) => {
-  const { scrollYProgress } = useScroll();
-  const y1 = useTransform(scrollYProgress, [0, 1], [0, -100]);
-  const y2 = useTransform(scrollYProgress, [0, 1], [0, -200]);
-  const y3 = useTransform(scrollYProgress, [0, 1], [0, -50]);
+  const mountRef = useRef<HTMLDivElement>(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+  // --- 1. Three.js Background Effect ---
+  useEffect(() => {
+    if (!mountRef.current) return;
+
+    // Scene Setup
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    mountRef.current.appendChild(renderer.domElement);
+
+    // Particles (Digital Pollen/Data)
+    const particlesGeometry = new THREE.BufferGeometry();
+    const particlesCount = 700;
+    const posArray = new Float32Array(particlesCount * 3);
+
+    for(let i = 0; i < particlesCount * 3; i++) {
+      posArray[i] = (Math.random() - 0.5) * 15; // Spread
+    }
+
+    particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+
+    // Custom material for emerald glow
+    const particlesMaterial = new THREE.PointsMaterial({
+      size: 0.02,
+      color: 0x10b981, // Emerald 500
+      transparent: true,
+      opacity: 0.8,
+    });
+
+    const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
+    scene.add(particlesMesh);
+
+    // Abstract Geometry (The "Brain")
+    const geoGeometry = new THREE.IcosahedronGeometry(1, 1);
+    const geoMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0x10b981,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.15
+    });
+    const geoMesh = new THREE.Mesh(geoGeometry, geoMaterial);
+    scene.add(geoMesh);
+
+    camera.position.z = 3;
+
+    // Animation Loop
+    let mouseX = 0;
+    let mouseY = 0;
+
+    const animate = () => {
+      requestAnimationFrame(animate);
+
+      // Rotate whole system slowly
+      particlesMesh.rotation.y += 0.0005;
+      particlesMesh.rotation.x += 0.0002;
+      
+      // Rotate brain faster
+      geoMesh.rotation.x += 0.001;
+      geoMesh.rotation.y += 0.001;
+
+      // Mouse Parallax on 3D objects
+      const targetX = mouseX * 0.5;
+      const targetY = mouseY * 0.5;
+      
+      particlesMesh.rotation.y += 0.05 * (targetX - particlesMesh.rotation.y);
+      particlesMesh.rotation.x += 0.05 * (targetY - particlesMesh.rotation.x);
+
+      renderer.render(scene, camera);
+    };
+
+    animate();
+
+    // Event Listeners
+    const handleMouseMove = (event: MouseEvent) => {
+      mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+      mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+    };
+
+    const handleResize = () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('resize', handleResize);
+      if (mountRef.current) {
+        mountRef.current.removeChild(renderer.domElement);
+      }
+      particlesGeometry.dispose();
+      particlesMaterial.dispose();
+    };
+  }, []);
+
+  // --- 2. React Parallax Logic for DOM Elements ---
+  const handleParallaxMove = (e: React.MouseEvent) => {
+    const { clientX, clientY } = e;
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    
+    // Calculate distance from center (-1 to 1)
+    setMousePos({
+      x: (clientX - centerX) / centerX,
+      y: (clientY - centerY) / centerY
+    });
+  };
 
   return (
-    <div className="flex flex-col w-full overflow-hidden bg-slate-50 dark:bg-slate-900 transition-colors duration-500">
+    <div 
+      className="flex flex-col relative bg-slate-50 dark:bg-slate-900 transition-colors overflow-x-hidden"
+      onMouseMove={handleParallaxMove}
+    >
       
-      {/* --- HERO SECTION --- */}
-      <section className="relative min-h-[90vh] flex items-center">
-        <BackgroundParticles />
-        
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 w-full grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          
-          {/* Left: Text Content */}
-          <div className="relative z-10 pt-20 lg:pt-0">
-             <motion.div 
-               initial={{ opacity: 0, x: -50 }}
-               animate={{ opacity: 1, x: 0 }}
-               transition={{ duration: 0.8 }}
-             >
-               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/50 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200 dark:border-slate-700 text-sm font-bold text-emerald-600 dark:text-emerald-400 mb-8 shadow-sm">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+      {/* 3D Background Container */}
+      <div 
+        ref={mountRef} 
+        className="fixed inset-0 pointer-events-none z-0 opacity-60 dark:opacity-40 mix-blend-multiply dark:mix-blend-screen" 
+      />
+
+      {/* Hero Section */}
+      <section className="relative pt-32 pb-40 z-10 min-h-screen flex items-center">
+        {/* Decorative Gradients */}
+        <div className="absolute top-20 right-0 w-[600px] h-[600px] bg-emerald-300/20 rounded-full blur-[120px] -z-10 animate-pulse"></div>
+        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-blue-300/20 rounded-full blur-[100px] -z-10"></div>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            
+            {/* Left Column: Text */}
+            <div 
+              className="text-center lg:text-left transition-transform duration-100 ease-out"
+              style={{ transform: `translate(${mousePos.x * -20}px, ${mousePos.y * -20}px)` }}
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 dark:bg-slate-800/80 backdrop-blur border border-slate-200 dark:border-slate-700 text-sm font-medium text-emerald-600 dark:text-emerald-400 mb-8 shadow-sm hover:scale-105 transition-transform cursor-default">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                Now powered by Gemini 2.5 Flash
+              </div>
+              
+              <h1 className="text-6xl sm:text-7xl lg:text-8xl font-black text-slate-900 dark:text-white tracking-tight mb-8 leading-[0.9]">
+                Social Media <br /> 
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500">
+                  On Autopilot.
+                </span>
+              </h1>
+              
+              <p className="text-xl text-slate-600 dark:text-slate-300 max-w-xl mx-auto lg:mx-0 mb-10 leading-relaxed font-light">
+                Kawayan AI uses advanced local LLMs to generate viral <span className="font-semibold text-slate-900 dark:text-white">"Taglish"</span> captions, trendy visuals, and schedules for Philippine MSMEs.
+              </p>
+              
+              <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
+                <button 
+                  onClick={() => onNavigate(ViewState.LOGIN)}
+                  className="group relative px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-bold text-lg overflow-hidden shadow-2xl hover:shadow-emerald-500/20 transition-all hover:-translate-y-1"
+                >
+                  <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-emerald-500 to-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <span className="relative flex items-center gap-2 group-hover:text-white dark:group-hover:text-white">
+                    Start Free Trial <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                   </span>
-                  Generative AI for Philippines
-               </div>
+                </button>
+                
+                <button 
+                  onClick={() => document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' })}
+                  className="px-8 py-4 bg-transparent border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-2xl font-bold text-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-2"
+                >
+                  <Play className="w-5 h-5 fill-current" /> Watch Demo
+                </button>
+              </div>
+            </div>
 
-               <h1 className="text-5xl md:text-7xl font-black text-slate-900 dark:text-white tracking-tight mb-8 leading-[1.1]">
-                  Social Media <br />
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 animate-gradient">
-                     on Autopilot
-                  </span>
-               </h1>
-
-               <p className="text-xl text-slate-600 dark:text-slate-300 max-w-xl mb-10 leading-relaxed">
-                  Generate viral Taglish captions, create stunning visuals, and schedule your entire month in clicks. The only AI trained on Filipino culture.
-               </p>
-
-               <div className="flex flex-wrap gap-4">
-                  <button 
-                    onClick={() => onNavigate(ViewState.LOGIN)}
-                    className="px-8 py-4 bg-slate-900 dark:bg-emerald-500 text-white rounded-full font-bold text-lg hover:bg-slate-800 dark:hover:bg-emerald-600 transition transform hover:-translate-y-1 shadow-lg hover:shadow-emerald-500/25 flex items-center gap-2"
-                  >
-                    Start Free Trial <ArrowRight className="w-5 h-5" />
-                  </button>
-                  <button 
-                     onClick={() => {
-                        document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' });
-                     }}
-                     className="px-8 py-4 bg-white dark:bg-slate-800 text-slate-700 dark:text-white border border-slate-200 dark:border-slate-700 rounded-full font-bold text-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-2"
-                  >
-                    <Play className="w-4 h-4 fill-current" /> Watch Demo
-                  </button>
-               </div>
-
-               <div className="mt-12 flex items-center gap-4 text-sm text-slate-500 dark:text-slate-400">
-                  <div className="flex -space-x-3">
-                     {[1,2,3,4].map(i => (
-                        <div key={i} className="w-10 h-10 rounded-full border-2 border-white dark:border-slate-900 bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-xs font-bold">
-                           {String.fromCharCode(64+i)}
-                        </div>
-                     ))}
-                  </div>
-                  <p>Trusted by <span className="text-slate-900 dark:text-white font-bold">500+ MSMEs</span> in PH</p>
-               </div>
-             </motion.div>
-          </div>
-
-          {/* Right: 3D Scene */}
-          <div className="h-[500px] lg:h-[800px] w-full relative z-0">
-             <Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
-                <Suspense fallback={null}>
-                  <Environment preset="city" />
-                  <ambientLight intensity={0.5} />
-                  <pointLight position={[10, 10, 10]} intensity={1.5} color="#10b981" />
-                  <pointLight position={[-10, -10, -10]} intensity={0.5} color="#3b82f6" />
-                  <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
-                  <AIOrb />
-                </Suspense>
-             </Canvas>
-             
-             {/* Floating UI Elements over 3D */}
-             <motion.div 
-               initial={{ opacity: 0, y: 20 }}
-               animate={{ opacity: 1, y: 0 }}
-               transition={{ delay: 1, duration: 1 }}
-               className="absolute top-1/4 right-0 lg:right-10 bg-white/80 dark:bg-slate-800/80 backdrop-blur-lg p-4 rounded-2xl border border-white/20 dark:border-slate-600 shadow-2xl max-w-xs"
-             >
-                <div className="flex items-center gap-3 mb-2">
-                   <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600">
-                      <TrendingUp className="w-4 h-4" />
-                   </div>
-                   <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase">Virality Score</p>
-                      <p className="text-lg font-black text-slate-800 dark:text-white">98/100</p>
+            {/* Right Column: Floating Cards (Parallax) */}
+            <div className="relative h-[600px] hidden lg:block perspective-1000">
+              
+              {/* Card 1: Main Visual */}
+              <div 
+                className="absolute top-10 right-10 w-80 bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-4 border border-slate-100 dark:border-slate-700 z-20 animate-float"
+                style={{ 
+                  transform: `translate(${mousePos.x * 30}px, ${mousePos.y * 30}px) rotateY(-10deg)`,
+                  transition: 'transform 0.1s ease-out'
+                }}
+              >
+                <div className="h-48 bg-slate-100 dark:bg-slate-700 rounded-2xl mb-4 overflow-hidden relative">
+                   <div className="absolute inset-0 bg-gradient-to-br from-emerald-400/20 to-blue-400/20"></div>
+                   <div className="absolute inset-0 flex items-center justify-center">
+                      <Sparkles className="w-12 h-12 text-emerald-500 animate-pulse"/>
                    </div>
                 </div>
-                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5">
-                   <div className="bg-orange-500 h-1.5 rounded-full w-[98%]"></div>
+                <div className="space-y-2">
+                  <div className="h-4 w-3/4 bg-slate-100 dark:bg-slate-700 rounded animate-pulse"></div>
+                  <div className="h-4 w-1/2 bg-slate-100 dark:bg-slate-700 rounded animate-pulse"></div>
                 </div>
-             </motion.div>
-          </div>
+                <div className="mt-4 flex items-center gap-2 text-xs text-slate-400">
+                   <div className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center text-emerald-600">AI</div>
+                   <span>Generating content...</span>
+                </div>
+              </div>
 
+              {/* Card 2: Stats (Glassmorphism) */}
+              <div 
+                className="absolute bottom-20 left-10 w-64 glass-card p-6 rounded-3xl z-30 shadow-xl backdrop-blur-xl"
+                style={{ 
+                  transform: `translate(${mousePos.x * 50}px, ${mousePos.y * 50}px) rotateY(10deg)`,
+                  transition: 'transform 0.15s ease-out'
+                }}
+              >
+                 <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 bg-orange-100 rounded-lg text-orange-600"><TrendingUp className="w-5 h-5"/></div>
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-300 uppercase">Virality</span>
+                 </div>
+                 <div className="text-4xl font-black text-slate-800 dark:text-white mb-1">98%</div>
+                 <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5">
+                    <div className="bg-orange-500 h-1.5 rounded-full w-[98%]"></div>
+                 </div>
+              </div>
+
+              {/* Card 3: Floating Elements */}
+              <div 
+                 className="absolute top-1/2 left-1/2 w-20 h-20 bg-emerald-500 rounded-2xl shadow-lg z-10 flex items-center justify-center text-white rotate-12"
+                 style={{ 
+                  transform: `translate(${mousePos.x * -40}px, ${mousePos.y * -40}px) translate(-50%, -50%)`,
+                  transition: 'transform 0.2s ease-out'
+                }}
+              >
+                 <Zap className="w-10 h-10 fill-current" />
+              </div>
+            </div>
+
+          </div>
         </div>
       </section>
 
-      {/* --- FEATURES SECTION WITH PARALLAX --- */}
-      <section id="features" className="py-32 relative">
-         <div className="absolute inset-0 bg-slate-100/50 dark:bg-slate-800/30 skew-y-3 transform origin-top-left -z-10"></div>
+      {/* Marquee Section */}
+      <div className="w-full bg-white dark:bg-slate-800 border-y border-slate-100 dark:border-slate-700 py-8 overflow-hidden relative z-10">
+         <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-white dark:from-slate-800 to-transparent z-10"></div>
+         <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-white dark:from-slate-800 to-transparent z-10"></div>
          
+         <div className="flex w-[200%] animate-scroll">
+            {[...Array(2)].map((_, i) => (
+              <div key={i} className="flex justify-around w-1/2 items-center gap-12 px-12 min-w-max">
+                 <span className="text-2xl font-black text-slate-300 dark:text-slate-600">KAIN<span className="text-emerald-500">.</span>PO</span>
+                 <span className="text-2xl font-serif italic text-slate-300 dark:text-slate-600">ManilaStrut</span>
+                 <span className="text-2xl font-bold tracking-widest text-slate-300 dark:text-slate-600">BARAKO</span>
+                 <span className="text-2xl font-mono text-slate-300 dark:text-slate-600">TechTito</span>
+                 <span className="text-2xl font-bold text-slate-300 dark:text-slate-600">Lola's<span className="font-light">Best</span></span>
+              </div>
+            ))}
+         </div>
+      </div>
+
+      {/* Features Bento Grid */}
+      <section id="features" className="py-32 relative z-10">
          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto mb-20">
-               <motion.h2 
-                 initial={{ opacity: 0, y: 20 }}
-                 whileInView={{ opacity: 1, y: 0 }}
-                 viewport={{ once: true }}
-                 className="text-3xl md:text-5xl font-bold text-slate-900 dark:text-white mb-6"
-               >
-                 Built for <span className="text-emerald-500">Filipino Growth</span>
-               </motion.h2>
-               <motion.p 
-                 initial={{ opacity: 0, y: 20 }}
-                 whileInView={{ opacity: 1, y: 0 }}
-                 transition={{ delay: 0.1 }}
-                 viewport={{ once: true }}
-                 className="text-lg text-slate-600 dark:text-slate-300"
-               >
-                 Our AI understands the nuances of "Hugot", "Sweldo", and Filipino buying behavior better than any generic tool.
-               </motion.p>
+               <h2 className="text-4xl font-black text-slate-900 dark:text-white mb-6">Master the Algorithm.</h2>
+               <p className="text-xl text-slate-500 dark:text-slate-400">Native Filipino AI understanding. No more robotic translations.</p>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-               <div className="md:mt-0">
-                  <FeatureCard 
-                    y={y1}
-                    delay={0}
-                    icon={<Sparkles className="w-6 h-6 text-white"/>}
-                    title="Taglish Magic"
-                    desc="Don't sound like a robot. Our AI speaks fluent Taglish, ensuring your captions feel authentic and 'patok' to your audience."
-                  />
-               </div>
-               <div className="md:mt-12">
-                   <FeatureCard 
-                    y={y2}
-                    delay={0.2}
-                    icon={<Zap className="w-6 h-6 text-white"/>}
-                    title="Trend Riding"
-                    desc="Get real-time suggestions based on what's trending in the Philippines—from 'Ber Months' to the latest viral memes."
-                  />
-               </div>
-               <div className="md:mt-24">
-                   <FeatureCard 
-                    y={y3}
-                    delay={0.4}
-                    icon={<Calendar className="w-6 h-6 text-white"/>}
-                    title="One-Click Plan"
-                    desc="Generate a whole month's worth of content ideas in seconds. Drag, drop, and schedule effortlessly."
-                  />
-               </div>
-            </div>
-         </div>
-      </section>
-
-      {/* --- DEMO / UI SHOWCASE --- */}
-      <section id="demo" className="py-24 bg-slate-900 text-white relative overflow-hidden">
-         <div className="absolute top-0 left-0 w-full h-full opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
-         
-         <div className="max-w-7xl mx-auto px-4 relative z-10 flex flex-col md:flex-row items-center gap-16">
-            <div className="flex-1">
-               <h2 className="text-4xl font-bold mb-6">Your Personal Creative Studio</h2>
-               <div className="space-y-6">
-                  {[
-                    "Auto-generates images from text",
-                    "Calculates virality potential before you post",
-                    "Suggests relevant #hashtags",
-                    "Schedules specifically for PH timezones"
-                  ].map((item, i) => (
-                    <motion.div 
-                      key={i}
-                      initial={{ opacity: 0, x: -20 }}
-                      whileInView={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                      viewport={{ once: true }}
-                      className="flex items-center gap-3 text-lg text-slate-300"
-                    >
-                       <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
-                         <CheckCircle2 className="w-4 h-4" />
-                       </div>
-                       {item}
-                    </motion.div>
-                  ))}
-               </div>
-            </div>
-            
-            <div className="flex-1 perspective-1000">
-               <motion.div 
-                 initial={{ rotateY: 10, rotateX: 10, opacity: 0 }}
-                 whileInView={{ rotateY: -5, rotateX: 5, opacity: 1 }}
-                 transition={{ duration: 1 }}
-                 viewport={{ once: true }}
-                 className="relative bg-slate-800 rounded-xl border border-slate-700 shadow-2xl p-2 md:p-4 transform hover:rotate-0 transition-transform duration-500"
-               >
-                  <div className="bg-slate-900 rounded-lg overflow-hidden aspect-video relative group">
-                      {/* Fake UI */}
-                      <div className="absolute top-4 left-4 right-4 flex gap-2">
-                         <div className="w-1/3 h-24 bg-slate-800 rounded-lg animate-pulse"></div>
-                         <div className="w-1/3 h-24 bg-slate-800 rounded-lg animate-pulse delay-100"></div>
-                         <div className="w-1/3 h-24 bg-emerald-900/20 border border-emerald-500/50 rounded-lg flex items-center justify-center">
-                            <span className="text-emerald-500 text-xs font-bold">Generated</span>
-                         </div>
-                      </div>
-                      
-                      <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-slate-900 to-transparent flex items-end p-6">
-                         <div className="w-full">
-                            <div className="w-1/2 h-4 bg-slate-700 rounded mb-2"></div>
-                            <div className="w-3/4 h-4 bg-slate-700 rounded"></div>
-                         </div>
-                      </div>
-
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
-                         <button className="bg-white text-slate-900 px-6 py-3 rounded-full font-bold flex items-center gap-2">
-                            <Play className="w-4 h-4 fill-slate-900" /> See it in action
-                         </button>
-                      </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 grid-rows-2 gap-6 h-auto md:h-[600px]">
+               
+               {/* Feature 1: Large Left */}
+               <div className="md:col-span-2 row-span-2 bg-white dark:bg-slate-800 rounded-[2rem] p-8 border border-slate-200 dark:border-slate-700 shadow-lg relative overflow-hidden group hover:shadow-2xl transition-all duration-500">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-50 dark:bg-emerald-900/20 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/30"></div>
+                  <div className="relative z-10 h-full flex flex-col justify-between">
+                     <div>
+                        <div className="w-12 h-12 rounded-xl bg-emerald-500 flex items-center justify-center text-white mb-6">
+                           <Sparkles className="w-6 h-6"/>
+                        </div>
+                        <h3 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">Taglish Magic</h3>
+                        <p className="text-lg text-slate-500 dark:text-slate-400 max-w-md">
+                           Our AI doesn't just translate; it understands culture. It generates "hugot", "diskarte", and "sweldo" humor that resonates deeply with Pinoy audiences.
+                        </p>
+                     </div>
+                     
+                     {/* Chat UI Mock */}
+                     <div className="mt-8 bg-slate-50 dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-700 w-full max-w-md self-center transform group-hover:scale-105 transition-transform duration-500">
+                        <div className="flex gap-3 mb-3">
+                           <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700"></div>
+                           <div className="bg-white dark:bg-slate-800 p-3 rounded-2xl rounded-tl-none shadow-sm text-sm text-slate-600 dark:text-slate-300">
+                              Create a caption for a rainy day coffee promo.
+                           </div>
+                        </div>
+                        <div className="flex gap-3 flex-row-reverse">
+                           <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white text-xs">AI</div>
+                           <div className="bg-emerald-50 dark:bg-emerald-900/30 p-3 rounded-2xl rounded-tr-none text-sm text-emerald-800 dark:text-emerald-200">
+                              "Tag-ulan na naman! ☔️ Perfect time para mag-emote with our Hot Choco. Yakap in a cup, bes! ☕️ #BedWeather"
+                           </div>
+                        </div>
+                     </div>
                   </div>
-               </motion.div>
+               </div>
+
+               {/* Feature 2: Top Right */}
+               <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-[2rem] p-8 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+                     <TrendingUp className="w-32 h-32" />
+                  </div>
+                  <div className="relative z-10">
+                     <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center mb-4 backdrop-blur">
+                        <Zap className="w-5 h-5 text-yellow-400"/>
+                     </div>
+                     <h3 className="text-xl font-bold mb-2">Trend Riding</h3>
+                     <p className="text-slate-300 text-sm">Real-time alerts on what's trending in Manila. Never miss a viral wave.</p>
+                  </div>
+               </div>
+
+               {/* Feature 3: Bottom Right */}
+               <div className="bg-white dark:bg-slate-800 rounded-[2rem] p-8 border border-slate-200 dark:border-slate-700 shadow-lg group hover:border-emerald-500 transition-colors">
+                  <div className="w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center mb-4 text-orange-600">
+                     <Calendar className="w-5 h-5"/>
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Auto-Calendar</h3>
+                  <p className="text-slate-500 dark:text-slate-400 text-sm mb-4">Plan 30 days of content in 1 click. Drag, drop, done.</p>
+                  <div className="flex gap-1">
+                     {[1,2,3,4,5].map(i => (
+                        <div key={i} className={`h-1 flex-1 rounded-full ${i<4 ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`}></div>
+                     ))}
+                  </div>
+               </div>
+
             </div>
          </div>
       </section>
 
-      {/* --- CTA SECTION --- */}
+      {/* CTA Section */}
       <section className="py-32 relative overflow-hidden">
-         <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-slate-900 dark:to-slate-800 -z-20"></div>
-         <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] -z-10"></div>
+         <div className="absolute inset-0 bg-slate-900 dark:bg-black"></div>
+         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
          
          <div className="max-w-4xl mx-auto px-4 text-center relative z-10">
-            <motion.div
-               initial={{ scale: 0.9, opacity: 0 }}
-               whileInView={{ scale: 1, opacity: 1 }}
-               transition={{ type: "spring", bounce: 0.4 }}
-            >
-              <h2 className="text-4xl md:text-6xl font-black text-slate-900 dark:text-white mb-8">
-                 Ready to dominate?
-              </h2>
-              <p className="text-xl text-slate-600 dark:text-slate-300 mb-10 max-w-2xl mx-auto">
-                 Join the waitlist of MSMEs using Kawayan AI to scale their business with less effort.
-              </p>
-              <div className="flex flex-col sm:flex-row justify-center gap-4">
-                 <button 
-                    onClick={() => onNavigate(ViewState.LOGIN)}
-                    className="px-10 py-5 bg-emerald-600 text-white rounded-full font-bold text-xl hover:bg-emerald-700 transition shadow-xl hover:shadow-emerald-500/40 transform hover:-translate-y-1"
-                 >
-                    Get Started Now
-                 </button>
-              </div>
-              <div className="mt-8 flex items-center justify-center gap-6 text-sm text-slate-500 dark:text-slate-400">
-                 <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500"/> No credit card required</span>
-                 <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500"/> Cancel anytime</span>
-              </div>
-            </motion.div>
+            <h2 className="text-5xl md:text-7xl font-black text-white mb-8 tracking-tight">
+               Ready to go <span className="text-emerald-500">Viral?</span>
+            </h2>
+            <p className="text-xl text-slate-400 mb-12 max-w-2xl mx-auto">
+               Join 1,000+ Filipino MSMEs saving 20 hours a week on content creation.
+            </p>
+            
+            <div className="flex flex-col sm:flex-row justify-center gap-6">
+               <button 
+                  onClick={() => onNavigate(ViewState.LOGIN)}
+                  className="px-10 py-5 bg-emerald-500 text-white rounded-2xl font-bold text-xl hover:bg-emerald-400 transition shadow-[0_0_40px_-10px_rgba(16,185,129,0.5)] transform hover:scale-105"
+               >
+                  Get Started Free
+               </button>
+            </div>
+            
+            <div className="mt-12 flex flex-wrap justify-center gap-8 text-sm font-medium text-slate-500">
+               <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500"/> No credit card required</span>
+               <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500"/> Cancel anytime</span>
+               <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500"/> Free plan available</span>
+            </div>
          </div>
       </section>
 

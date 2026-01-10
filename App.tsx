@@ -13,7 +13,7 @@ const App: React.FC = () => {
   const [view, setView] = useState<ViewState>(ViewState.LANDING);
   const [user, setUser] = useState<User | null>(null);
   const [brandProfile, setBrandProfile] = useState<BrandProfile | null>(null);
-  const [darkMode, setDarkMode] = useState(false); // Default to Light Mode
+  const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
     // Check for existing session on load
@@ -24,6 +24,11 @@ const App: React.FC = () => {
     // Check URL hash for admin back door
     if (window.location.hash === '#admin-portal') {
       setView(ViewState.ADMIN_LOGIN);
+    }
+
+    // Check system preference for dark mode
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+       setDarkMode(true);
     }
   }, []);
 
@@ -109,6 +114,7 @@ const App: React.FC = () => {
                 <>
                   {view === ViewState.CALENDAR && (
                      <div className="hidden md:flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm mr-4">
+                       {/* Removed green circle as requested */}
                        {user?.businessName}
                      </div>
                   )}
