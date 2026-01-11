@@ -23,9 +23,72 @@ type LayoutMode = 'split' | 'calendar' | 'focus';
 const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('split');
-  const [currentDate, setCurrentDate] = useState(new Date(2025, 9, 1)); // Oct 2025 default
+  const [currentDate, setCurrentDate] = useState(new Date()); 
+  const [dateInputValue, setDateInputValue] = useState("");
   const [loadingPlan, setLoadingPlan] = useState(false);
   const [ideas, setIdeas] = useState<ContentIdea[]>([]);
+
+  useEffect(() => {
+    // Sync input value when currentDate changes (e.g. via navigation buttons)
+    setDateInputValue(currentDate.toLocaleString('default', { month: 'long', year: 'numeric' }));
+  }, [currentDate]);
+
+  const parseSmartDate = (input: string) => {
+    // Clean input: replace commas/slashes with spaces, remove extra spaces
+    let clean = input.replace(/[,/]/g, ' ').replace(/\s+/g, ' ').trim();
+    
+    // Handle 4-digit year only "2026"
+    if (/^\d{4}$/.test(clean)) {
+      return { date: new Date(parseInt(clean), 0, 1), isSpecific: false };
+    }
+
+    // Heuristic: Check for Month Name + Day + Optional Year (e.g. "Jan 12 26", "feb 2")
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const monthMatch = months.findIndex(m => clean.toLowerCase().startsWith(m));
+    
+    if (monthMatch !== -1) {
+       // Found a month name start
+       const parts = clean.split(' ');
+       const yearPart = parts.find(p => /^\d{4}$/.test(p) || /^\d{2}$/.test(p) && parseInt(p) > 31);
+       const dayPart = parts.find(p => /^\d{1,2}$/.test(p) && p !== yearPart);
+       
+       let year = yearPart ? (yearPart.length === 2 ? 2000 + parseInt(yearPart) : parseInt(yearPart)) : currentDate.getFullYear();
+       let day = dayPart ? parseInt(dayPart) : 1;
+       
+       // Clamp day
+       const maxDay = new Date(year, monthMatch + 1, 0).getDate();
+       day = Math.min(day, maxDay);
+       
+       return { date: new Date(year, monthMatch, day), isSpecific: !!dayPart };
+    }
+
+    // Try standard parsing
+    const parsed = new Date(clean);
+    if (!isNaN(parsed.getTime())) {
+      // Determine if specific day was likely intended
+      const hasDay = /\d{1,2}/.test(clean.replace(/\d{4}/, '')); 
+      return { date: parsed, isSpecific: hasDay };
+    }
+    return null;
+  };
+
+  const handleDateInputBlur = () => {
+    const result = parseSmartDate(dateInputValue);
+    if (result) {
+      // Valid date found
+      setCurrentDate(result.date);
+      if (result.isSpecific) {
+        setSelectedDay(result.date.getDate());
+        // Switch to split view if picking a specific day
+        if (layoutMode === 'calendar') setLayoutMode('split');
+      }
+      // Auto-correct the text to standard format
+      setDateInputValue(result.date.toLocaleString('default', { month: 'long', year: 'numeric' }));
+    } else {
+      // Invalid, revert to current
+      setDateInputValue(currentDate.toLocaleString('default', { month: 'long', year: 'numeric' }));
+    }
+  };
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [generatingPost, setGeneratingPost] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<GeneratedPost | null>(null);
@@ -64,6 +127,28 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
     localStorage.setItem('kawayan_posts', JSON.stringify(posts));
   };
 
+  const savePlan = async (userId: string, month: string, ideas: ContentIdea[]) => {
+    const plans = JSON.parse(localStorage.getItem('kawayan_plans') || '[]');
+    const planId = `${userId}-${month}`;
+    const existingIndex = plans.findIndex((p: any) => p.id === planId);
+    
+    const newPlan = { id: planId, userId, month, ideas, updatedAt: new Date().toISOString() };
+    
+    if (existingIndex >= 0) {
+      plans[existingIndex] = newPlan;
+    } else {
+      plans.push(newPlan);
+    }
+    
+    localStorage.setItem('kawayan_plans', JSON.stringify(plans));
+  };
+
+  const getPlan = async (userId: string, month: string): Promise<ContentIdea[] | null> => {
+    const plans = JSON.parse(localStorage.getItem('kawayan_plans') || '[]');
+    const plan = plans.find((p: any) => p.id === `${userId}-${month}`);
+    return plan ? plan.ideas : null;
+  };
+
   const handleSurveyComplete = async (profileData: BrandProfile) => {
     if (!user) return;
     const newProfile = { ...profileData, userId: user.id };
@@ -81,15 +166,25 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [currentDate]);
 
   const loadData = async () => {
     try {
       console.log('Loading calendar data for user:', userId);
-      const trends = await getTrendingTopicsPH();
+      const trends = await getTrendingTopicsPH(profile.industry);
       setTrendingTopics(trends);
+      
       const savedPosts = await getUserPosts(userId);
       setPosts(savedPosts);
+
+      const monthName = currentDate.toLocaleString('default', { month: 'long' });
+      const savedPlan = await getPlan(userId, monthName);
+      if (savedPlan) {
+        setIdeas(savedPlan);
+      } else {
+        setIdeas([]);
+      }
+      
       console.log('Loaded posts:', savedPosts.length);
     } catch (error) {
       console.error('Error loading calendar data:', error);
@@ -101,6 +196,7 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
     const monthName = currentDate.toLocaleString('default', { month: 'long' });
     const newIdeas = await generateContentPlan(profile, monthName);
     setIdeas(newIdeas);
+    await savePlan(userId, monthName, newIdeas);
     setLoadingPlan(false);
   };
 
@@ -279,7 +375,20 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
           {/* Calendar Header */}
           <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-850">
              <div className="flex items-center gap-2">
-               <h2 className="text-lg font-bold text-slate-800 dark:text-white">{currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}</h2>
+               <div className="relative group">
+                 <input 
+                   type="text" 
+                   value={dateInputValue}
+                   onChange={(e) => setDateInputValue(e.target.value)}
+                   onBlur={handleDateInputBlur}
+                   onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                   placeholder="Jump to date..."
+                   className="text-lg font-bold text-slate-800 dark:text-white bg-transparent border-b border-dashed border-slate-300 dark:border-slate-600 hover:border-emerald-500 focus:border-emerald-500 focus:ring-0 p-0 w-48 transition-colors outline-none placeholder:font-normal placeholder:text-slate-400"
+                 />
+                 <div className="absolute opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-[10px] px-2 py-1 rounded -bottom-8 left-0 whitespace-nowrap pointer-events-none z-50">
+                    Try "Jan 2026", "12/25/25", or just "2026"
+                 </div>
+               </div>
                <div className="flex gap-1 ml-4">
                   <button className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 transition" onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth()-1)))}>
                     <ChevronLeft className="w-5 h-5"/>
@@ -361,7 +470,10 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
                   <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
                      {currentDate.toLocaleString('default', {month:'long'})} {selectedDay}
                   </span>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[200px]">
+                  <h3 
+                    className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[200px]"
+                    title={posts.find(p => new Date(p.date).getDate() === selectedDay)?.topic || ideas.find(i => i.day === selectedDay)?.title || "Create Post"}
+                  >
                     {posts.find(p => new Date(p.date).getDate() === selectedDay)?.topic || ideas.find(i => i.day === selectedDay)?.title || "Create Post"}
                   </h3>
                 </div>

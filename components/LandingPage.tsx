@@ -1,116 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { ViewState } from '../types';
-import { ArrowRight, Sparkles, TrendingUp, Calendar, Zap, CheckCircle2, Play, MousePointer2 } from 'lucide-react';
-import * as THREE from 'three';
+import { ArrowRight, Sparkles, TrendingUp, Calendar, Zap, CheckCircle2, Play } from 'lucide-react';
 
 interface Props {
   onNavigate: (view: ViewState) => void;
 }
 
 const LandingPage: React.FC<Props> = ({ onNavigate }) => {
-  const mountRef = useRef<HTMLDivElement>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-
-  // --- 1. Three.js Background Effect ---
-  useEffect(() => {
-    if (!mountRef.current) return;
-
-    // Scene Setup
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    mountRef.current.appendChild(renderer.domElement);
-
-    // Particles (Digital Pollen/Data)
-    const particlesGeometry = new THREE.BufferGeometry();
-    const particlesCount = 700;
-    const posArray = new Float32Array(particlesCount * 3);
-
-    for(let i = 0; i < particlesCount * 3; i++) {
-      posArray[i] = (Math.random() - 0.5) * 15; // Spread
-    }
-
-    particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-
-    // Custom material for emerald glow
-    const particlesMaterial = new THREE.PointsMaterial({
-      size: 0.02,
-      color: 0x10b981, // Emerald 500
-      transparent: true,
-      opacity: 0.8,
-    });
-
-    const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
-    scene.add(particlesMesh);
-
-    // Abstract Geometry (The "Brain")
-    const geoGeometry = new THREE.IcosahedronGeometry(1, 1);
-    const geoMaterial = new THREE.MeshBasicMaterial({ 
-      color: 0x10b981,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.15
-    });
-    const geoMesh = new THREE.Mesh(geoGeometry, geoMaterial);
-    scene.add(geoMesh);
-
-    camera.position.z = 3;
-
-    // Animation Loop
-    let mouseX = 0;
-    let mouseY = 0;
-
-    const animate = () => {
-      requestAnimationFrame(animate);
-
-      // Rotate whole system slowly
-      particlesMesh.rotation.y += 0.0005;
-      particlesMesh.rotation.x += 0.0002;
-      
-      // Rotate brain faster
-      geoMesh.rotation.x += 0.001;
-      geoMesh.rotation.y += 0.001;
-
-      // Mouse Parallax on 3D objects
-      const targetX = mouseX * 0.5;
-      const targetY = mouseY * 0.5;
-      
-      particlesMesh.rotation.y += 0.05 * (targetX - particlesMesh.rotation.y);
-      particlesMesh.rotation.x += 0.05 * (targetY - particlesMesh.rotation.x);
-
-      renderer.render(scene, camera);
-    };
-
-    animate();
-
-    // Event Listeners
-    const handleMouseMove = (event: MouseEvent) => {
-      mouseX = (event.clientX / window.innerWidth) * 2 - 1;
-      mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
-    };
-
-    const handleResize = () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('resize', handleResize);
-      if (mountRef.current) {
-        mountRef.current.removeChild(renderer.domElement);
-      }
-      particlesGeometry.dispose();
-      particlesMaterial.dispose();
-    };
-  }, []);
 
   // --- 2. React Parallax Logic for DOM Elements ---
   const handleParallaxMove = (e: React.MouseEvent) => {
@@ -131,12 +28,6 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
       onMouseMove={handleParallaxMove}
     >
       
-      {/* 3D Background Container */}
-      <div 
-        ref={mountRef} 
-        className="fixed inset-0 pointer-events-none z-0 opacity-60 dark:opacity-40 mix-blend-multiply dark:mix-blend-screen" 
-      />
-
       {/* Hero Section */}
       <section className="relative pt-32 pb-40 z-10 min-h-screen flex items-center">
         {/* Decorative Gradients */}
@@ -151,14 +42,6 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
               className="text-center lg:text-left transition-transform duration-100 ease-out"
               style={{ transform: `translate(${mousePos.x * -20}px, ${mousePos.y * -20}px)` }}
             >
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 dark:bg-slate-800/80 backdrop-blur border border-slate-200 dark:border-slate-700 text-sm font-medium text-emerald-600 dark:text-emerald-400 mb-8 shadow-sm hover:scale-105 transition-transform cursor-default">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                Now powered by Gemini 2.5 Flash
-              </div>
-              
               <h1 className="text-6xl sm:text-7xl lg:text-8xl font-black text-slate-900 dark:text-white tracking-tight mb-8 leading-[0.9]">
                 Social Media <br /> 
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500">
@@ -172,7 +55,7 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
               
               <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
                 <button 
-                  onClick={() => onNavigate(ViewState.LOGIN)}
+                  onClick={() => onNavigate(ViewState.SIGNUP)}
                   className="group relative px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-bold text-lg overflow-hidden shadow-2xl hover:shadow-emerald-500/20 transition-all hover:-translate-y-1"
                 >
                   <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-emerald-500 to-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
@@ -358,7 +241,7 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
             
             <div className="flex flex-col sm:flex-row justify-center gap-6">
                <button 
-                  onClick={() => onNavigate(ViewState.LOGIN)}
+                  onClick={() => onNavigate(ViewState.SIGNUP)}
                   className="px-10 py-5 bg-emerald-500 text-white rounded-2xl font-bold text-xl hover:bg-emerald-400 transition shadow-[0_0_40px_-10px_rgba(16,185,129,0.5)] transform hover:scale-105"
                >
                   Get Started Free

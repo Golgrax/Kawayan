@@ -76,17 +76,7 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
       return null;
     }
   }
-      
-      // Create session
-      await this.createSession(user.id);
-      
-      logger.logAuthAttempt(email, true, user.id);
-      return user;
-    } catch (error) {
-      logger.logDatabaseError('loginUser', error, email);
-      return null;
-    }
-  }
+
   
   async logoutUser(): Promise<void> {
     const db = this.dbConfig.getDatabase();

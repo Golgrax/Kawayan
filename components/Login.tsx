@@ -7,10 +7,11 @@ interface Props {
   onLogin: (user: User) => void;
   onNavigate: (view: ViewState) => void;
   isAdminLogin?: boolean;
+  initialIsSignUp?: boolean;
 }
 
-const Login: React.FC<Props> = ({ onLogin, onNavigate, isAdminLogin = false }) => {
-  const [isSignUp, setIsSignUp] = useState(false);
+const Login: React.FC<Props> = ({ onLogin, onNavigate, isAdminLogin = false, initialIsSignUp = false }) => {
+  const [isSignUp, setIsSignUp] = useState(initialIsSignUp);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [businessName, setBusinessName] = useState('');

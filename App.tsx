@@ -23,14 +23,14 @@ const App: React.FC = () => {
   const [darkMode, setDarkMode] = useState(false);
 
   // LocalStorage helpers
-  const getFromStorage = <T>(key: string): T[] => {
+  function getFromStorage<T>(key: string): T[] {
     try {
       const data = localStorage.getItem(key);
       return data ? JSON.parse(data) : [];
     } catch {
       return [];
     }
-  };
+  }
 
   const saveToStorage = (key: string, data: any[]) => {
     try {
@@ -132,26 +132,44 @@ const App: React.FC = () => {
       if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
          setDarkMode(true);
       }
-
-      // Initialize default admin if not exists
-      const users = getFromStorage<User>(STORAGE_KEYS.USERS);
-      if (!users.find(u => u.email === 'admin@kawayan.ph')) {
-        const defaultAdmin: User = {
-          id: 'admin-1',
-          email: 'admin@kawayan.ph',
-          passwordHash: 'client_admin123',
-          role: 'admin',
-          businessName: 'Kawayan Admin'
-        };
-        
-        const allUsers = [...users, defaultAdmin];
-        saveToStorage(STORAGE_KEYS.USERS, allUsers);
-        console.log('Default admin user created');
-      }
-      
     } catch (error) {
       console.error('Error initializing app:', error);
     }
+  }, []);
+
+  // Update HTML class for dark mode
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
+
+  // Initialize/Ensure Admin Exists
+  useEffect(() => {
+     const users = getFromStorage<User>(STORAGE_KEYS.USERS);
+     const adminEmail = 'admin@kawayan.ph';
+     const adminIndex = users.findIndex(u => u.email === adminEmail);
+     
+     const defaultAdmin: User = {
+        id: 'admin-1',
+        email: adminEmail,
+        passwordHash: 'client_admin123',
+        role: 'admin',
+        businessName: 'Kawayan Admin'
+     };
+
+     if (adminIndex === -1) {
+        users.push(defaultAdmin);
+        saveToStorage(STORAGE_KEYS.USERS, users);
+        console.log('Default admin user created');
+     } else if (users[adminIndex].passwordHash !== 'client_admin123') {
+        // Fix stale admin password
+        users[adminIndex] = defaultAdmin;
+        saveToStorage(STORAGE_KEYS.USERS, users);
+        console.log('Admin user updated with correct credentials');
+     }
   }, []);
 
   const handleLogin = (loggedInUser: User) => {
@@ -186,6 +204,11 @@ const App: React.FC = () => {
     await saveProfile(newProfile);
     setBrandProfile(newProfile);
     setView(ViewState.CALENDAR);
+  };
+
+  const handleProfileUpdate = async (profileData: BrandProfile) => {
+    await saveProfile(profileData);
+    setBrandProfile(profileData);
   };
 
   // Safe navigation guard for logged in users
@@ -238,7 +261,7 @@ const App: React.FC = () => {
                       Login
                     </button>
                     <button 
-                      onClick={() => setView(ViewState.LOGIN)}
+                      onClick={() => setView(ViewState.SIGNUP)}
                       className="bg-slate-900 dark:bg-emerald-600 text-white px-5 py-2.5 rounded-full font-bold text-sm hover:bg-slate-800 dark:hover:bg-emerald-700 transition shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center gap-2"
                     >
                       Sign Up <ArrowRight className="w-4 h-4" />
@@ -252,7 +275,7 @@ const App: React.FC = () => {
       </nav>
 
       {/* Main Content */}
-      <main className={`flex-grow ${view === ViewState.LOGIN || view === ViewState.ADMIN_LOGIN ? 'flex items-center justify-center' : ''}`}>
+      <main className={`flex-grow ${view === ViewState.LOGIN || view === ViewState.SIGNUP || view === ViewState.ADMIN_LOGIN ? 'flex items-center justify-center' : ''}`}>
         <div className={`w-full ${view === ViewState.CALENDAR || view === ViewState.ADMIN_DASHBOARD || view === ViewState.SETTINGS ? 'max-w-[1600px] mx-auto py-6 px-4 sm:px-6 lg:px-8' : 'w-full'}`}>
           {(() => {
             switch (view) {
@@ -260,6 +283,8 @@ const App: React.FC = () => {
                 return <LandingPage onNavigate={setView} />;
               case ViewState.LOGIN:
                 return <Login onLogin={handleLogin} onNavigate={setView} />;
+              case ViewState.SIGNUP:
+                return <Login onLogin={handleLogin} onNavigate={setView} initialIsSignUp={true} />;
               case ViewState.ADMIN_LOGIN:
                 return <Login onLogin={handleLogin} onNavigate={setView} isAdminLogin={true} />;
               case ViewState.SURVEY:
@@ -267,7 +292,7 @@ const App: React.FC = () => {
               case ViewState.CALENDAR:
                 return (user && brandProfile) ? <ContentCalendar profile={brandProfile} userId={user.id} /> : <div>Loading...</div>;
               case ViewState.SETTINGS:
-                return (brandProfile) ? <Settings profile={brandProfile} onProfileUpdate={setBrandProfile} darkMode={darkMode} toggleDarkMode={() => setDarkMode(!darkMode)} /> : <div>Loading...</div>;
+                return (brandProfile) ? <Settings profile={brandProfile} onProfileUpdate={handleProfileUpdate} darkMode={darkMode} toggleDarkMode={() => setDarkMode(!darkMode)} onClose={() => setView(ViewState.CALENDAR)} /> : <div>Loading...</div>;
               case ViewState.ADMIN_DASHBOARD:
                 return (user && user.role === 'admin') ? <AdminDashboard /> : <div className="text-center p-10">Access Denied</div>;
               default:

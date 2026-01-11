@@ -266,13 +266,17 @@ export const generateImageFromPrompt = async (prompt: string): Promise<string | 
   }
 };
 
-export const getTrendingTopicsPH = async (): Promise<string[]> => {
+export const getTrendingTopicsPH = async (industry?: string): Promise<string[]> => {
   if (!apiKey) {
     console.warn("API Key missing, using fallback trending topics");
     return ValidationService.createFallbackTrendingTopics();
   }
   
-  const prompt = "List 5 generic but currently relevant trending topics, events, or seasons in the Philippines right now (e.g., Christmas, Summer, Back to School, Payday, Viral Memes). Return just the topics as a simple list.";
+  let prompt = "List 5 generic but currently relevant trending topics, events, or seasons in the Philippines right now (e.g., Christmas, Summer, Back to School, Payday, Viral Memes). Return just the topics as a simple list.";
+  
+  if (industry) {
+    prompt = `List 5 currently relevant trending topics, events, or seasons in the Philippines right now, specifically tailored for the "${industry}" industry. Include general Filipino trends if relevant. Return just the topics as a simple list.`;
+  }
   
   const schema: Schema = {
     type: Type.ARRAY,

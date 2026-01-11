@@ -2,15 +2,18 @@
 
 Kawayan AI is an intelligent social media content generation platform tailored specifically for Philippine MSMEs (Micro, Small, and Medium Enterprises). It uses Google's Gemini 2.5 Flash to generate culturally resonant "Taglish" content, images, and schedules.
 
-## Features
+## 🌟 Key Features
 
 - **Taglish Content Generation:** Creates captions that sound natural to Filipinos (combining English and Tagalog).
 - **Virality Scoring:** AI analyzes drafted content and predicts how "patok" (viral) it will be.
 - **Smart Scheduling:** Generates monthly content plans based on industry and brand voice.
 - **Image Generation:** Creates high-quality visual prompts and images using Gemini 2.5 Flash Image.
-- **Admin Dashboard:** Tracks MRR, Churn, and User growth.
+- **Smart Date Selection:** Jump to any date by typing naturally (e.g., "Jan 12 26", "1/2/26", or just "2026"). Includes auto-correction for invalid dates (like clamping Feb 30 to Feb 28).
+- **Industry-Specific Trends:** Provides trending topics tailored specifically to your business industry.
+- **Admin Dashboard:** Professional overview for platform owners to track MRR, Churn, and User growth.
+- **Data Persistence:** Your content plans, drafted posts, and login session are saved automatically via LocalStorage.
 
-## Development
+## 🚀 Quick Start
 
 1.  **Install Dependencies:**
     ```bash
@@ -18,9 +21,9 @@ Kawayan AI is an intelligent social media content generation platform tailored s
     ```
 
 2.  **Set Environment Variable:**
-    Create a `.env` file (or set in your shell) with your Google Gemini API Key:
+    Create a `.env` file with your Google Gemini API Key:
     ```bash
-    export API_KEY="your_google_api_key_here"
+    VITE_GEMINI_API_KEY="your_google_api_key_here"
     ```
 
 3.  **Run Locally:**
@@ -28,39 +31,19 @@ Kawayan AI is an intelligent social media content generation platform tailored s
     npm run dev
     ```
 
-## 🚀 How to Deploy on Render (Free Tier)
+## 🔐 Admin Access
 
-This application can be deployed as a **Static Site** on Render.
+To access the platform's administrative features:
+- **Direct Login:** Use the credentials below on the standard login page.
+- **Shortcut:** Click the small **Lock Icon** in the footer of the landing page.
 
-1.  **Push to GitHub:**
-    Ensure your code is pushed to a public or private GitHub repository.
+**Credentials:**
+- **Email:** `admin@kawayan.ph`
+- **Password:** `admin123`
 
-2.  **Create Service on Render:**
-    *   Go to [dashboard.render.com](https://dashboard.render.com/).
-    *   Click **New +** and select **Static Site**.
-    *   Connect your GitHub repository.
+## 🛠 Technologies
 
-3.  **Configure Build Settings:**
-    *   **Name:** `kawayan-ai` (or your choice)
-    *   **Branch:** `main` (or `master`)
-    *   **Build Command:** `npm install && npm run build`
-    *   **Publish Directory:** `dist`
-
-4.  **Add API Key (CRITICAL):**
-    *   Scroll down to the **Environment Variables** section.
-    *   Click **Add Environment Variable**.
-    *   **Key:** `API_KEY`
-    *   **Value:** Paste your Google Gemini API Key here.
-    *   *Note: Since this is a client-side React app, the key will be embedded in the build. For a production enterprise app, you would use a proxy server, but for this demo/hackathon tier, this method works.*
-
-5.  **Deploy:**
-    *   Click **Create Static Site**.
-    *   Wait for the build to finish. Render will provide you with a `.onrender.com` URL.
-
-## Technologies
-
-*   React + TypeScript
-*   Google GenAI SDK (Gemini 2.5 Flash)
-*   Tailwind CSS
-*   Recharts
-*   Lucide Icons
+*   **Frontend:** React + TypeScript + Tailwind CSS
+*   **AI:** Google GenAI SDK (Gemini 2.5 Flash)
+*   **Visuals:** Lucide Icons + Recharts
+*   **Storage:** Local Storage for persistent user data and sessions
