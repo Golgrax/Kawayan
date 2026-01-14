@@ -68,3 +68,23 @@ Kawayan AI uses a prepaid wallet system for add-ons and subscriptions.
 *   Click the floating **Message Icon** in the bottom-right.
 *   Type a question like *"How much is the pro plan?"* or *"My payment failed."*
 *   The AI agent will respond with specific knowledge about Kawayan AI's features and pricing.
+
+---
+
+## 5. Support & Help Desk
+
+### **Submitting a Ticket (User)**
+1.  Open the Support Widget.
+2.  Click **New Ticket**.
+3.  Enter your Subject and Priority.
+4.  Click **Submit**. You will receive a ticket number (e.g., #1001).
+
+### **Calling Support (User)**
+1.  Open the Support Widget.
+2.  Click **Call Us**.
+3.  A VoIP overlay will appear. It will "ring" and then connect you to an agent.
+
+### **Managing Tickets (Support Staff)**
+1.  Logout and login as **Support Staff** (`support@kawayan.ph` / `support123`).
+2.  You will be redirected to the **Support Help Desk**.
+3.  Here you can view all open tickets, filter by status, and click **Resolve** to close tickets.

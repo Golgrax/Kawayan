@@ -11,6 +11,7 @@ Kawayan AI uses a **Service Layer Pattern** to decouple the UI from the data sou
   - `geminiService.ts`: Handles all AI and real-time data fetching.
   - `socialService.ts`: Manages OAuth states and Social Graph data.
   - `paymentService.ts`: Manages Wallet ledger and Xendit gateway transactions.
+  - `supportService.ts`: Manages ticketing and help desk workflows.
 
 ---
 
@@ -84,3 +85,13 @@ Directly fetching Google Trends RSS from a browser is blocked by CORS. We use a 
 
 ### **Usage**
 This data is automatically pulled when the Content Calendar loads. If the fetch fails (e.g., ad blockers), it silently falls back to Gemini AI generation to ensure UI stability.
+
+---
+
+## 6. Support & VoIP System
+
+We implement a complete ticketing and call center simulation.
+
+### **Features**
+*   **VoIP Dialer:** Simulates a WebRTC connection with connection states (`dialing` -> `connected`), live call timer, and mute/video controls.
+*   **Ticket System:** A persistent local database of tickets (`Ticket` entity) that syncs between the User Widget and the Support Agent Dashboard.
