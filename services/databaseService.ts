@@ -13,7 +13,7 @@ export class DatabaseService {
   }
   
   // --- Users (Auth) ---
-  async createUser(email: string, password: string, role: 'user' | 'admin' = 'user', businessName?: string): Promise<User | null> {
+  async createUser(email: string, password: string, role: 'user' | 'admin' | 'support' = 'user', businessName?: string): Promise<User | null> {
     const db = this.dbConfig.getDatabase();
     
     try {
@@ -64,7 +64,8 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
         email: row.email,
         passwordHash: row.password_hash,
         role: row.role,
-        businessName: row.business_name
+        businessName: row.business_name,
+        theme: row.theme
       };
       
       // Verify password with JWT service
@@ -106,6 +107,16 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
       console.error('Error logging out user:', error);
     }
   }
+
+  async updateUserTheme(userId: string, theme: 'light' | 'dark'): Promise<void> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      db.prepare('UPDATE users SET theme = ? WHERE id = ?').run(theme, userId);
+    } catch (error) {
+      console.error('Error updating user theme:', error);
+      throw error;
+    }
+  }
   
   getCurrentUser(): User | null {
     if (typeof window === 'undefined') return null;
@@ -131,7 +142,8 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
         email: row.email,
         passwordHash: row.password_hash,
         role: row.role,
-        businessName: row.business_name
+        businessName: row.business_name,
+        theme: row.theme
       };
       
       // Generate JWT token
@@ -330,6 +342,97 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     } catch (error) {
       console.error('Error getting plan:', error);
       return null;
+    }
+  }
+
+  // --- Wallet & Transactions ---
+  async getWallet(userId: string): Promise<any> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      let wallet = db.prepare('SELECT * FROM wallets WHERE user_id = ?').get(userId) as any;
+      
+      if (!wallet) {
+        // Create default wallet
+        db.prepare('INSERT INTO wallets (user_id, balance, currency, subscription) VALUES (?, ?, ?, ?)').run(userId, 0, 'PHP', 'FREE');
+        wallet = db.prepare('SELECT * FROM wallets WHERE user_id = ?').get(userId);
+      }
+
+      const transactions = db.prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY date DESC').all(userId) as any[];
+
+      return {
+        balance: wallet.balance,
+        currency: wallet.currency,
+        subscription: wallet.subscription,
+        transactions: transactions.map(t => ({
+          id: t.id,
+          date: t.date,
+          description: t.description,
+          amount: t.amount,
+          status: t.status,
+          type: t.type
+        }))
+      };
+    } catch (error) {
+      console.error('Error getting wallet:', error);
+      throw error;
+    }
+  }
+
+  async createTransaction(userId: string, amount: number, description: string, type: 'CREDIT' | 'DEBIT', status: 'PENDING' | 'COMPLETED' = 'COMPLETED'): Promise<void> {
+    const db = this.dbConfig.getDatabase();
+    const id = `txn_${Date.now()}`;
+    
+    try {
+      db.transaction(() => {
+        // Add transaction record
+        db.prepare(`
+          INSERT INTO transactions (id, user_id, description, amount, status, type)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(id, userId, description, amount, status, type);
+
+        // Update wallet balance ONLY if COMPLETED
+        if (status === 'COMPLETED') {
+          if (type === 'CREDIT') {
+            db.prepare('UPDATE wallets SET balance = balance + ? WHERE user_id = ?').run(amount, userId);
+          } else {
+            db.prepare('UPDATE wallets SET balance = balance - ? WHERE user_id = ?').run(amount, userId);
+          }
+        }
+      })();
+    } catch (error) {
+      console.error('Error creating transaction:', error);
+      throw error;
+    }
+  }
+
+  async approveTransaction(transactionId: string): Promise<void> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      db.transaction(() => {
+        const txn = db.prepare('SELECT * FROM transactions WHERE id = ? AND status = "PENDING"').get(transactionId) as any;
+        if (!txn) throw new Error("Pending transaction not found");
+
+        db.prepare('UPDATE transactions SET status = "COMPLETED" WHERE id = ?').run(transactionId);
+        
+        if (txn.type === 'CREDIT') {
+          db.prepare('UPDATE wallets SET balance = balance + ? WHERE user_id = ?').run(txn.amount, txn.user_id);
+        } else {
+          db.prepare('UPDATE wallets SET balance = balance - ? WHERE user_id = ?').run(txn.amount, txn.user_id);
+        }
+      })();
+    } catch (error) {
+      console.error('Error approving transaction:', error);
+      throw error;
+    }
+  }
+
+  async updateSubscription(userId: string, plan: 'FREE' | 'PRO' | 'ENTERPRISE'): Promise<void> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      db.prepare('UPDATE wallets SET subscription = ? WHERE user_id = ?').run(plan, userId);
+    } catch (error) {
+      console.error('Error updating subscription:', error);
+      throw error;
     }
   }
   

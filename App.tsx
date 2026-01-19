@@ -60,6 +60,13 @@ const App: React.FC = () => {
   const handleLogin = async (loggedInUser: User) => {
     setUser(loggedInUser);
     
+    // Set theme from user preference
+    if (loggedInUser.theme === 'dark') {
+      setDarkMode(true);
+    } else {
+      setDarkMode(false);
+    }
+    
     if (loggedInUser.role === 'admin') {
       setView(ViewState.ADMIN_DASHBOARD);
     } else if (loggedInUser.role === 'support') {
@@ -111,6 +118,18 @@ const App: React.FC = () => {
     // Note: Password update would need special handling in backend
     // For now we just alert as this is a prototype
     alert("Profile updates are currently managed via account settings. Feature coming soon.");
+  };
+
+  const updateTheme = async (newDarkMode: boolean) => {
+    setDarkMode(newDarkMode);
+    if (user) {
+      try {
+        await dbService.updateUserTheme(user.id, newDarkMode ? 'dark' : 'light');
+        setUser({ ...user, theme: newDarkMode ? 'dark' : 'light' });
+      } catch (error) {
+        console.error('Failed to update theme in database:', error);
+      }
+    }
   };
 
   // Safe navigation guard for logged in users

@@ -27,6 +27,7 @@ export class DatabaseConfig {
         password_hash TEXT NOT NULL,
         role TEXT NOT NULL CHECK (role IN ('user', 'admin', 'support')),
         business_name TEXT,
+        theme TEXT DEFAULT 'light',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -91,6 +92,32 @@ export class DatabaseConfig {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+
+    // Wallets table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS wallets (
+        user_id TEXT PRIMARY KEY,
+        balance REAL DEFAULT 0.0,
+        currency TEXT DEFAULT 'PHP',
+        subscription TEXT DEFAULT 'FREE' CHECK (subscription IN ('FREE', 'PRO', 'ENTERPRISE')),
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Transactions table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        date DATETIME DEFAULT CURRENT_TIMESTAMP,
+        description TEXT NOT NULL,
+        amount REAL NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('PENDING', 'COMPLETED', 'FAILED')),
+        type TEXT NOT NULL CHECK (type IN ('CREDIT', 'DEBIT')),
+        FOREIGN KEY (user_id) REFERENCES wallets(user_id) ON DELETE CASCADE
+      )
+    `);
     
     // Create indexes for better performance
     this.db.exec(`
@@ -102,6 +129,7 @@ export class DatabaseConfig {
       CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
       CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
       CREATE INDEX IF NOT EXISTS idx_content_plans_user_month ON content_plans(user_id, month);
+      CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
     `);
     
     // Create triggers for updated_at timestamps
@@ -122,6 +150,12 @@ export class DatabaseConfig {
         AFTER UPDATE ON generated_posts
         BEGIN
           UPDATE generated_posts SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+        END;
+
+      CREATE TRIGGER IF NOT EXISTS update_wallets_timestamp 
+        AFTER UPDATE ON wallets
+        BEGIN
+          UPDATE wallets SET updated_at = CURRENT_TIMESTAMP WHERE user_id = NEW.user_id;
         END;
     `);
   }

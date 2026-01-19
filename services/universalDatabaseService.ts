@@ -77,6 +77,11 @@ export class UniversalDatabaseService {
     return service.logoutUser();
   }
 
+  async updateUserTheme(userId: string, theme: 'light' | 'dark'): Promise<void> {
+    const service = await this.getService();
+    return service.updateUserTheme(userId, theme);
+  }
+
   getCurrentUser(): User | null {
     if (isNodeEnvironment) {
       // Node.js - need to handle async

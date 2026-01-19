@@ -78,6 +78,28 @@ export class ClientDatabaseService {
     }
   }
 
+  async updateUserTheme(userId: string, theme: 'light' | 'dark'): Promise<void> {
+    try {
+      const response = await fetch(`${this.baseUrl}/auth/theme`, {
+        method: 'PUT',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ userId, theme })
+      });
+
+      if (!response.ok) throw new Error('Failed to update theme');
+      
+      // Update local session
+      const session = this.getCurrentUser();
+      if (session && session.id === userId) {
+        session.theme = theme;
+        localStorage.setItem('kawayan_session', JSON.stringify(session));
+      }
+    } catch (error) {
+      logger.error('Error updating theme (api)', { userId, theme, error });
+      throw error;
+    }
+  }
+
   // Helper for synchronous access, kept for compatibility
   getCurrentUser(): User | null {
     try {

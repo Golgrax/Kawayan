@@ -100,6 +100,23 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   res.json(user);
 });
 
+app.put('/api/auth/theme', authenticateToken, async (req, res) => {
+  const { userId, theme } = req.body;
+  const user = req.user;
+
+  if (userId !== user.userId && user.role !== 'admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    await dbService.updateUserTheme(userId, theme);
+    res.json({ message: 'Theme updated successfully' });
+  } catch (error) {
+    logger.error('Update theme error', { error: error.message });
+    res.status(500).json({ error: 'Failed to update theme' });
+  }
+});
+
 // Profiles
 app.post('/api/profiles', authenticateToken, async (req, res) => {
   const profile = req.body;
@@ -203,6 +220,100 @@ app.get('/api/plans/:userId/:month', authenticateToken, async (req, res) => {
   } catch (error) {
     logger.error('Get plan error', { error: error.message });
     res.status(500).json({ error: 'Failed to fetch plan' });
+  }
+});
+
+// Wallet & Payments
+app.get('/api/wallet/:userId', authenticateToken, async (req, res) => {
+  const userId = req.params.userId;
+  const user = req.user;
+
+  if (userId !== user.userId && user.role !== 'admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const wallet = await dbService.getWallet(userId);
+    res.json(wallet);
+  } catch (error) {
+    logger.error('Get wallet error', { error: error.message });
+    res.status(500).json({ error: 'Failed to fetch wallet' });
+  }
+});
+
+app.post('/api/wallet/topup', authenticateToken, async (req, res) => {
+  const { userId, amount, description } = req.body;
+  const user = req.user;
+
+  if (userId !== user.userId && user.role !== 'admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    // Top-ups are now PENDING by default for manual verification
+    await dbService.createTransaction(userId, amount, description || 'Wallet Top-up', 'CREDIT', 'PENDING');
+    const wallet = await dbService.getWallet(userId);
+    res.json(wallet);
+  } catch (error) {
+    logger.error('Topup error', { error: error.message });
+    res.status(500).json({ error: 'Failed to initiate top up' });
+  }
+});
+
+app.post('/api/admin/wallet/approve', authenticateToken, requireAdmin, async (req, res) => {
+  const { transactionId } = req.body;
+
+  try {
+    await dbService.approveTransaction(transactionId);
+    res.json({ message: 'Transaction approved and balance updated' });
+  } catch (error) {
+    logger.error('Approval error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/wallet/purchase', authenticateToken, async (req, res) => {
+  const { userId, amount, description, plan } = req.body;
+  const user = req.user;
+
+  if (userId !== user.userId && user.role !== 'admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const wallet = await dbService.getWallet(userId);
+    if (wallet.balance < amount) {
+      return res.status(400).json({ error: 'Insufficient balance' });
+    }
+
+    await dbService.createTransaction(userId, amount, description, 'DEBIT');
+    if (plan) {
+      await dbService.updateSubscription(userId, plan);
+    }
+    
+    const updatedWallet = await dbService.getWallet(userId);
+    res.json(updatedWallet);
+  } catch (error) {
+    logger.error('Purchase error', { error: error.message });
+    res.status(500).json({ error: 'Failed to process purchase' });
+  }
+});
+
+app.post('/api/wallet/cancel', authenticateToken, async (req, res) => {
+  const { userId } = req.body;
+  const user = req.user;
+
+  if (userId !== user.userId && user.role !== 'admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    await dbService.updateSubscription(userId, 'FREE');
+    const wallet = await dbService.getWallet(userId);
+    res.json(wallet);
+  } catch (error) {
+    logger.error('Cancel subscription error', { error: error.message });
+    res.status(500).json({ error: 'Failed to cancel subscription' });
   }
 });
 

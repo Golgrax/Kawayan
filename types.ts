@@ -4,6 +4,7 @@ export interface User {
   passwordHash: string; // In a real app, never store plain text. We'll mock this.
   role: 'user' | 'admin' | 'support';
   businessName?: string;
+  theme?: 'light' | 'dark';
 }
 
 export interface BrandProfile {
