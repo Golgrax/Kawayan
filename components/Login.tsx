@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ValidationService } from '../services/validationService';
 import { User, ViewState } from '../types';
+import UniversalDatabaseService from '../services/universalDatabaseService';
 import { LogIn, UserPlus, AlertCircle, LayoutDashboard } from 'lucide-react';
 
 interface Props {
@@ -17,70 +17,58 @@ const Login: React.FC<Props> = ({ onLogin, onNavigate, isAdminLogin = false, ini
   const [businessName, setBusinessName] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  // Simple client-side data management
+  const [dbService] = useState(() => new UniversalDatabaseService());
 
-const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    try {
-      console.log('Login attempt:', { email, isSignUp, isAdminLogin });
+    const trimmedEmail = email.trim();
+    const trimmedBusinessName = businessName.trim();
 
-      // Simple client-side validation
-      if (!email || !password) {
+    try {
+      console.log('Login attempt:', { email: trimmedEmail, isSignUp, isAdminLogin });
+
+      if (!trimmedEmail || !password) {
         setError("Email and password are required");
         return;
       }
 
       if (isSignUp && !isAdminLogin) {
-        if (!businessName || businessName.trim().length < 2) {
+        if (!trimmedBusinessName || trimmedBusinessName.length < 2) {
           setError("Business name must be at least 2 characters long");
           return;
         }
+
+        const newUser = await dbService.createUser(trimmedEmail, password, 'user', trimmedBusinessName);
         
-        // Get existing users
-        const users = JSON.parse(localStorage.getItem('kawayan_users') || '[]');
-        if (users.find((u: any) => u.email === email)) {
-          setError("User already exists with this email.");
-          return;
+        if (newUser) {
+          console.log('User created successfully:', newUser.email);
+          onLogin(newUser);
+        } else {
+          setError("Registration failed. Email might be taken.");
         }
-        
-        // Create new user
-        const newUser: User = {
-          id: Date.now().toString(),
-          email,
-          passwordHash: `client_${password}`, // Simple client storage
-          role: 'user',
-          businessName: businessName.trim()
-        };
-        
-        const allUsers = [...users, newUser];
-        localStorage.setItem('kawayan_users', JSON.stringify(allUsers));
-        
-        console.log('User created successfully:', newUser.email);
-        onLogin(newUser);
       } else {
         // Login
-        const users = JSON.parse(localStorage.getItem('kawayan_users') || '[]');
-        const user = users.find((u: any) => u.email === email && (u.passwordHash === `client_${password}` || u.passwordHash === 'admin123' || u.passwordHash === 'support123'));
+        const result = await dbService.loginUser(trimmedEmail, password);
         
-        if (user) {
-          console.log('Login successful:', user.email);
+        if (result && result.user) {
+          console.log('Login successful:', result.user.email);
           
-          if (isAdminLogin && user.role !== 'admin') {
+          if (isAdminLogin && result.user.role !== 'admin') {
              setError("Access denied. Admin only.");
+             await dbService.logoutUser();
           } else {
-             localStorage.setItem('kawayan_session', JSON.stringify(user));
-             onLogin(user);
+             onLogin(result.user);
           }
         } else {
           setError("Invalid credentials.");
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login/Signup error:', error);
-      setError("An error occurred. Please try again.");
+      setError(error.message || "An error occurred. Please try again.");
     } finally {
       setIsLoading(false);
     }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrandProfile, ContentIdea, GeneratedPost } from '../types';
 import { generateContentPlan, generatePostCaptionAndImagePrompt, generateImageFromPrompt, getTrendingTopicsPH } from '../services/geminiService';
+import UniversalDatabaseService from '../services/universalDatabaseService';
 import { 
   Loader2, Plus, Wand2, Image as ImageIcon, RefreshCcw, Flame, 
   ThumbsUp, MessageCircle, Share2, MoreHorizontal, LayoutList, LayoutGrid, 
@@ -27,6 +28,7 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
   const [dateInputValue, setDateInputValue] = useState("");
   const [loadingPlan, setLoadingPlan] = useState(false);
   const [ideas, setIdeas] = useState<ContentIdea[]>([]);
+  const [dbService] = useState(() => new UniversalDatabaseService());
 
   useEffect(() => {
     // Sync input value when currentDate changes (e.g. via navigation buttons)
@@ -95,73 +97,6 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
   const [loadingImage, setLoadingImage] = useState(false);
   const [trendingTopics, setTrendingTopics] = useState<string[]>([]);
   const [posts, setPosts] = useState<GeneratedPost[]>([]);
-  // Simple client-side data management
-  const getUserPosts = async (userId: string): Promise<any[]> => {
-    const posts = JSON.parse(localStorage.getItem('kawayan_posts') || '[]');
-    return posts.filter((p: any) => p.userId === userId);
-  };
-  
-  const saveProfile = async (profile: any) => {
-    const profiles = JSON.parse(localStorage.getItem('kawayan_profiles') || '[]');
-    const existingIndex = profiles.findIndex((p: any) => p.userId === profile.userId);
-    
-    if (existingIndex >= 0) {
-      profiles[existingIndex] = profile;
-    } else {
-      profiles.push(profile);
-    }
-    
-    localStorage.setItem('kawayan_profiles', JSON.stringify(profiles));
-  };
-
-  const savePost = async (post: any) => {
-    const posts = JSON.parse(localStorage.getItem('kawayan_posts') || '[]');
-    const existingIndex = posts.findIndex((p: any) => p.id === post.id);
-    
-    if (existingIndex >= 0) {
-      posts[existingIndex] = post;
-    } else {
-      posts.push(post);
-    }
-    
-    localStorage.setItem('kawayan_posts', JSON.stringify(posts));
-  };
-
-  const savePlan = async (userId: string, month: string, ideas: ContentIdea[]) => {
-    const plans = JSON.parse(localStorage.getItem('kawayan_plans') || '[]');
-    const planId = `${userId}-${month}`;
-    const existingIndex = plans.findIndex((p: any) => p.id === planId);
-    
-    const newPlan = { id: planId, userId, month, ideas, updatedAt: new Date().toISOString() };
-    
-    if (existingIndex >= 0) {
-      plans[existingIndex] = newPlan;
-    } else {
-      plans.push(newPlan);
-    }
-    
-    localStorage.setItem('kawayan_plans', JSON.stringify(plans));
-  };
-
-  const getPlan = async (userId: string, month: string): Promise<ContentIdea[] | null> => {
-    const plans = JSON.parse(localStorage.getItem('kawayan_plans') || '[]');
-    const plan = plans.find((p: any) => p.id === `${userId}-${month}`);
-    return plan ? plan.ideas : null;
-  };
-
-  const handleSurveyComplete = async (profileData: BrandProfile) => {
-    if (!user) return;
-    const newProfile = { ...profileData, userId: user.id };
-    try {
-      console.log('Saving profile:', newProfile.businessName);
-      await saveProfile(newProfile);
-      setBrandProfile(newProfile);
-      setView(ViewState.CALENDAR);
-    } catch (error) {
-      console.error('Error saving profile:', error);
-      alert('Failed to save profile. Please try again.');
-    }
-  };
 
   useEffect(() => {
     loadData();
@@ -174,11 +109,11 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
       const trends = await getTrendingTopicsPH(profile.industry);
       setTrendingTopics(trends);
       
-      const savedPosts = await getUserPosts(userId);
+      const savedPosts = await dbService.getUserPosts(userId);
       setPosts(savedPosts);
 
       const monthName = currentDate.toLocaleString('default', { month: 'long' });
-      const savedPlan = await getPlan(userId, monthName);
+      const savedPlan = await dbService.getPlan(userId, monthName);
       if (savedPlan) {
         setIdeas(savedPlan);
       } else {
@@ -196,7 +131,7 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
     const monthName = currentDate.toLocaleString('default', { month: 'long' });
     const newIdeas = await generateContentPlan(profile, monthName);
     setIdeas(newIdeas);
-    await savePlan(userId, monthName, newIdeas);
+    await dbService.savePlan(userId, monthName, newIdeas);
     setLoadingPlan(false);
   };
 
@@ -324,7 +259,7 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
     if (generatedContent) {
       try {
         console.log('Saving post:', generatedContent.id);
-        await savePost(generatedContent);
+        await dbService.savePost(generatedContent);
         setPosts(prev => {
           const idx = prev.findIndex(p => p.id === generatedContent.id);
           if (idx >= 0) {

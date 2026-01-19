@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { TrendingUp, Users, Eye, MousePointer, Share2, Activity, Link as LinkIcon, AlertCircle, Loader2, Download, Trash2, X } from 'lucide-react';
 import { socialService, SocialPlatformData } from '../services/socialService';
+import UniversalDatabaseService from '../services/universalDatabaseService';
 import { GeneratedPost } from '../types';
 
 const InsightsDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [connections, setConnections] = useState<{facebook: boolean, instagram: boolean, tiktok: boolean}>({facebook: false, instagram: false, tiktok: false});
   const [platformData, setPlatformData] = useState<SocialPlatformData[]>([]);
+  const [dbService] = useState(() => new UniversalDatabaseService());
   
   // Data for Charts
   const [postData, setPostData] = useState<GeneratedPost[]>([]);
@@ -41,7 +43,8 @@ const InsightsDashboard: React.FC = () => {
     setPlatformData(data);
 
     // Internal Post Data
-    const posts = JSON.parse(localStorage.getItem('kawayan_posts') || '[]');
+    const currentUser = dbService.getCurrentUser();
+    const posts = currentUser ? await dbService.getUserPosts(currentUser.id) : [];
     setPostData(posts);
 
     // Aggregate Topics

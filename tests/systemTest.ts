@@ -27,7 +27,7 @@ async function testDatabaseService() {
         
         // Test profile creation
         const profile = {
-          userId: loggedInUser.id,
+          userId: loggedInUser.user.id,
           businessName: 'Test Business',
           industry: 'Technology',
           targetAudience: 'Young professionals',
@@ -39,7 +39,7 @@ async function testDatabaseService() {
         console.log('✓ Profile creation successful');
         
         // Test retrieving profile
-        const retrievedProfile = await dbService.getProfile(loggedInUser.id);
+        const retrievedProfile = await dbService.getProfile(loggedInUser.user.id);
         if (retrievedProfile) {
           console.log('✓ Profile retrieval successful');
         }
@@ -47,21 +47,23 @@ async function testDatabaseService() {
         // Test saving a post
         const post = {
           id: Date.now().toString(),
-          userId: loggedInUser.id,
+          userId: loggedInUser.user.id,
           date: '2025-01-15',
           topic: 'New Product Launch',
           caption: 'Check out our amazing new product! 🎉',
           imagePrompt: 'Professional product photography',
           status: 'Draft' as const,
           viralityScore: 75,
-          viralityReason: 'High engagement potential'
+          viralityReason: 'High engagement potential',
+          regenCount: 0,
+          history: []
         };
         
         await dbService.savePost(post);
         console.log('✓ Post creation successful');
         
         // Test retrieving posts
-        const posts = await dbService.getUserPosts(loggedInUser.id);
+        const posts = await dbService.getUserPosts(loggedInUser.user.id);
         if (posts.length > 0) {
           console.log('✓ Post retrieval successful');
         }

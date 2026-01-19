@@ -55,9 +55,17 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     const db = this.dbConfig.getDatabase();
     
     try {
-      const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as User;
+      const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
       
-      if (!user) return null;
+      if (!row) return null;
+
+      const user: User = {
+        id: row.id,
+        email: row.email,
+        passwordHash: row.password_hash,
+        role: row.role,
+        businessName: row.business_name
+      };
       
       // Verify password with JWT service
       const isValidPassword = await JWTService.verifyPassword(password, user.passwordHash);
@@ -115,7 +123,16 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     const db = this.dbConfig.getDatabase();
     
     try {
-      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User;
+      const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
+      if (!row) throw new Error('User not found');
+
+      const user: User = {
+        id: row.id,
+        email: row.email,
+        passwordHash: row.password_hash,
+        role: row.role,
+        businessName: row.business_name
+      };
       
       // Generate JWT token
       const jwtToken = JWTService.generateToken(user);
@@ -190,8 +207,18 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     const db = this.dbConfig.getDatabase();
     
     try {
-      const profile = db.prepare('SELECT * FROM brand_profiles WHERE user_id = ?').get(userId) as BrandProfile;
-      return profile;
+      const row = db.prepare('SELECT * FROM brand_profiles WHERE user_id = ?').get(userId) as any;
+      if (!row) return undefined;
+
+      return {
+        id: row.id,
+        userId: row.user_id,
+        businessName: row.business_name,
+        industry: row.industry,
+        targetAudience: row.target_audience,
+        brandVoice: row.brand_voice,
+        keyThemes: row.key_themes
+      };
     } catch (error) {
       console.error('Error getting profile:', error);
       return undefined;
@@ -253,11 +280,56 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     const db = this.dbConfig.getDatabase();
     
     try {
-      const posts = db.prepare('SELECT * FROM generated_posts WHERE user_id = ? ORDER BY date DESC').all(userId) as GeneratedPost[];
-      return posts;
+      const rows = db.prepare('SELECT * FROM generated_posts WHERE user_id = ? ORDER BY date DESC').all(userId) as any[];
+      return rows.map(row => ({
+        id: row.id,
+        userId: row.user_id,
+        date: row.date,
+        topic: row.topic,
+        caption: row.caption,
+        imagePrompt: row.image_prompt,
+        imageUrl: row.image_url,
+        status: row.status,
+        viralityScore: row.virality_score,
+        viralityReason: row.virality_reason,
+        format: row.format,
+        regenCount: 0,
+        history: []
+      }));
     } catch (error) {
       console.error('Error getting user posts:', error);
       return [];
+    }
+  }
+
+  // --- Content Plans ---
+  async savePlan(userId: string, month: string, ideas: any[]): Promise<void> {
+    const db = this.dbConfig.getDatabase();
+    const id = `${userId}-${month}`;
+    const ideasJson = JSON.stringify(ideas);
+    
+    try {
+      const existingPlan = db.prepare('SELECT id FROM content_plans WHERE id = ?').get(id);
+      
+      if (existingPlan) {
+        db.prepare('UPDATE content_plans SET ideas = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(ideasJson, id);
+      } else {
+        db.prepare('INSERT INTO content_plans (id, user_id, month, ideas) VALUES (?, ?, ?, ?)').run(id, userId, month, ideasJson);
+      }
+    } catch (error) {
+      console.error('Error saving plan:', error);
+      throw error;
+    }
+  }
+
+  async getPlan(userId: string, month: string): Promise<any[] | null> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      const plan = db.prepare('SELECT ideas FROM content_plans WHERE user_id = ? AND month = ?').get(userId, month) as { ideas: string } | undefined;
+      return plan ? JSON.parse(plan.ideas) : null;
+    } catch (error) {
+      console.error('Error getting plan:', error);
+      return null;
     }
   }
   
@@ -267,6 +339,8 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     activeUsers: number;
     totalPostsGenerated: number;
     revenue: number;
+    revenueData: { name: string; value: number }[];
+    churnData: { name: string; value: number }[];
   }> {
     const db = this.dbConfig.getDatabase();
     
@@ -276,11 +350,34 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
       const totalPostsGenerated = (db.prepare('SELECT COUNT(*) as count FROM generated_posts').get() as { count: number }).count;
       const revenue = totalUsers * 500; // Mock revenue: 500 PHP per user
       
+      // Calculate Revenue Growth (Users per month * 500)
+      const userGrowth = db.prepare(`
+        SELECT strftime('%Y-%m', created_at) as month, COUNT(*) as count 
+        FROM users 
+        WHERE created_at >= date('now', '-6 months')
+        GROUP BY month 
+        ORDER BY month ASC
+      `).all() as { month: string; count: number }[];
+      
+      const revenueData = userGrowth.map(item => {
+        const date = new Date(item.month + '-01');
+        return {
+          name: date.toLocaleDateString('en-US', { month: 'short' }),
+          value: item.count * 500 // Cumulative would be better but this shows monthly "sales"
+        };
+      });
+
+      // Mock Churn (we don't have deleted_at yet, so return 0s or minimal)
+      // Legitimately, we have 0 churn in this schema.
+      const churnData = revenueData.map(d => ({ name: d.name, value: 0 }));
+
       return {
         totalUsers,
         activeUsers,
         totalPostsGenerated,
-        revenue
+        revenue,
+        revenueData,
+        churnData
       };
     } catch (error) {
       console.error('Error getting admin stats:', error);
@@ -288,7 +385,9 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
         totalUsers: 0,
         activeUsers: 0,
         totalPostsGenerated: 0,
-        revenue: 0
+        revenue: 0,
+        revenueData: [],
+        churnData: []
       };
     }
   }
@@ -304,7 +403,7 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
       if (!existingAdmin) {
         // Create default admin user
         const adminId = Date.now().toString();
-        const passwordHash = await bcrypt.hash('admin123', 10);
+        const passwordHash = await JWTService.hashPassword('Admin123!');
         
         db.prepare(`
           INSERT INTO users (id, email, password_hash, role, business_name)

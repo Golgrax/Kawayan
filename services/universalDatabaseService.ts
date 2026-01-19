@@ -109,11 +109,23 @@ export class UniversalDatabaseService {
     return service.getUserPosts(userId);
   }
 
+  async savePlan(userId: string, month: string, ideas: any[]): Promise<void> {
+    const service = await this.getService();
+    return service.savePlan(userId, month, ideas);
+  }
+
+  async getPlan(userId: string, month: string): Promise<any[] | null> {
+    const service = await this.getService();
+    return service.getPlan(userId, month);
+  }
+
   async getAdminStats(): Promise<{
     totalUsers: number;
     activeUsers: number;
     totalPostsGenerated: number;
     revenue: number;
+    revenueData: { name: string; value: number }[];
+    churnData: { name: string; value: number }[];
   }> {
     const service = await this.getService();
     return service.getAdminStats();

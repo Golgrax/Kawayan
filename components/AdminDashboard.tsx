@@ -1,35 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { Users, AlertTriangle, TrendingUp, DollarSign, Activity, MessageSquare, CheckSquare, Clock } from 'lucide-react';
+import { Users, AlertTriangle, TrendingUp, DollarSign, Activity, MessageSquare, CheckSquare, Clock, CheckCircle } from 'lucide-react';
 import UniversalDatabaseService from '../services/universalDatabaseService';
 import { supportService } from '../services/supportService';
 import { Ticket } from '../types';
 
-const mockChurnData = [
-  { name: 'Jan', value: 2 },
-  { name: 'Feb', value: 3 },
-  { name: 'Mar', value: 1 },
-  { name: 'Apr', value: 4 },
-  { name: 'May', value: 2 },
-  { name: 'Jun', value: 1 },
-];
-
-const mockRevenueData = [
-  { name: 'Jan', value: 25000 },
-  { name: 'Feb', value: 32000 },
-  { name: 'Mar', value: 45000 },
-  { name: 'Apr', value: 42000 },
-  { name: 'May', value: 55000 },
-  { name: 'Jun', value: 68000 },
-];
-
 const AdminDashboard: React.FC = () => {
   const [dbService] = useState(() => new UniversalDatabaseService());
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<{
+    totalUsers: number;
+    activeUsers: number;
+    totalPostsGenerated: number;
+    revenue: number;
+    revenueData: { name: string; value: number }[];
+    churnData: { name: string; value: number }[];
+  }>({
     totalUsers: 0,
     activeUsers: 0,
     totalPostsGenerated: 0,
-    revenue: 0
+    revenue: 0,
+    revenueData: [],
+    churnData: []
   });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'helpdesk'>('overview');
@@ -97,10 +88,10 @@ const AdminDashboard: React.FC = () => {
           {/* KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
-              { label: 'Total Revenue', value: `₱${stats.revenue.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-50', trend: `₱${(stats.revenue / stats.totalUsers || 0).toLocaleString()} per user` },
+              { label: 'Total Revenue', value: `₱${stats.revenue.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-50', trend: `₱${(stats.revenue / (stats.totalUsers || 1)).toLocaleString()} per user` },
               { label: 'Active Users', value: stats.activeUsers.toString(), icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', trend: `${stats.totalUsers - stats.activeUsers} admins` },
-              { label: 'Total Users', value: stats.totalUsers.toString(), icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-50', trend: `${((stats.activeUsers / stats.totalUsers) * 100 || 0).toFixed(1)}% active` },
-              { label: 'Posts Generated', value: stats.totalPostsGenerated.toString(), icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50', trend: `${(stats.totalPostsGenerated / stats.totalUsers || 0).toFixed(1)} per user` },
+              { label: 'Total Users', value: stats.totalUsers.toString(), icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-50', trend: `${((stats.activeUsers / (stats.totalUsers || 1)) * 100).toFixed(1)}% active` },
+              { label: 'Posts Generated', value: stats.totalPostsGenerated.toString(), icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50', trend: `${(stats.totalPostsGenerated / (stats.totalUsers || 1)).toFixed(1)} per user` },
             ].map((stat, idx) => (
               <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-md transition">
                 <div className="flex justify-between items-start mb-4">
@@ -126,7 +117,7 @@ const AdminDashboard: React.FC = () => {
               </h3>
               <div className="h-80 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={mockRevenueData}>
+                  <AreaChart data={stats.revenueData}>
                     <defs>
                       <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
@@ -151,7 +142,7 @@ const AdminDashboard: React.FC = () => {
               </h3>
               <div className="h-80 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={mockChurnData}>
+                  <BarChart data={stats.churnData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
                     <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />

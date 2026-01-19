@@ -364,7 +364,7 @@ export const chatWithSupportBot = async (message: string, history: {sender: 'use
       ]
     });
     
-    return chatSession.response.text() || "I didn't catch that. Could you rephrase?";
+    return chatSession.text || "I didn't catch that. Could you rephrase?";
   } catch (error) {
     console.error("Chat error:", error);
     return "Sorry, I'm experiencing high traffic. Please try again or email support@kawayan.ph";

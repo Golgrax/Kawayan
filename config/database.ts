@@ -25,7 +25,7 @@ export class DatabaseConfig {
         id TEXT PRIMARY KEY,
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
-        role TEXT NOT NULL CHECK (role IN ('user', 'admin')),
+        role TEXT NOT NULL CHECK (role IN ('user', 'admin', 'support')),
         business_name TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -79,6 +79,18 @@ export class DatabaseConfig {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+
+    // Content Plans table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS content_plans (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        month TEXT NOT NULL,
+        ideas TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
     
     // Create indexes for better performance
     this.db.exec(`
@@ -89,6 +101,7 @@ export class DatabaseConfig {
       CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
       CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
       CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_content_plans_user_month ON content_plans(user_id, month);
     `);
     
     // Create triggers for updated_at timestamps

@@ -10,125 +10,32 @@ import SupportWidget from './components/SupportWidget';
 import InsightsDashboard from './components/InsightsDashboard';
 import Billing from './components/Billing';
 import SupportDashboard from './components/SupportDashboard';
+import UniversalDatabaseService from './services/universalDatabaseService';
 import { LayoutDashboard, LogOut, Lock, ArrowRight, Settings as SettingsIcon, BarChart3, CreditCard } from 'lucide-react';
-
-// Simple client-side data management
-const STORAGE_KEYS = {
-  USERS: 'kawayan_users',
-  PROFILES: 'kawayan_profiles',
-  POSTS: 'kawayan_posts',
-  SESSION: 'kawayan_session'
-};
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>(ViewState.LANDING);
   const [user, setUser] = useState<User | null>(null);
   const [brandProfile, setBrandProfile] = useState<BrandProfile | null>(null);
   const [darkMode, setDarkMode] = useState(false);
-
-  // LocalStorage helpers
-  function getFromStorage<T>(key: string): T[] {
-    try {
-      const data = localStorage.getItem(key);
-      return data ? JSON.parse(data) : [];
-    } catch {
-      return [];
-    }
-  }
-
-  const saveToStorage = (key: string, data: any[]) => {
-    try {
-      localStorage.setItem(key, JSON.stringify(data));
-    } catch {
-      console.error('Failed to save to storage:', key);
-    }
-  };
-
-  const getCurrentUser = (): User | null => {
-    try {
-      const session = localStorage.getItem(STORAGE_KEYS.SESSION);
-      return session ? JSON.parse(session) : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const loginUser = async (email: string, password: string): Promise<User | null> => {
-    const users = getFromStorage<User>(STORAGE_KEYS.USERS);
-    const user = users.find(u => u.email === email && (u.passwordHash === `client_${password}` || u.passwordHash === 'admin123'));
-    
-    if (user) {
-      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(user));
-      return user;
-    }
-    return null;
-  };
-
-  const logoutUser = async () => {
-    localStorage.removeItem(STORAGE_KEYS.SESSION);
-  };
-
-  const saveProfile = async (profile: BrandProfile) => {
-    const profiles = getFromStorage<BrandProfile>(STORAGE_KEYS.PROFILES);
-    const existingIndex = profiles.findIndex(p => p.userId === profile.userId);
-    
-    if (existingIndex >= 0) {
-      profiles[existingIndex] = profile;
-    } else {
-      profiles.push(profile);
-    }
-    
-    saveToStorage(STORAGE_KEYS.PROFILES, profiles);
-  };
-
-  const getProfile = async (userId: string): Promise<BrandProfile | undefined> => {
-    const profiles = getFromStorage<BrandProfile>(STORAGE_KEYS.PROFILES);
-    return profiles.find(p => p.userId === userId);
-  };
-
-  const savePost = async (post: any) => {
-    const posts = getFromStorage<any>(STORAGE_KEYS.POSTS);
-    const existingIndex = posts.findIndex(p => p.id === post.id);
-    
-    if (existingIndex >= 0) {
-      posts[existingIndex] = post;
-    } else {
-      posts.push(post);
-    }
-    
-    saveToStorage(STORAGE_KEYS.POSTS, posts);
-  };
-
-  const getUserPosts = async (userId: string): Promise<any[]> => {
-    const posts = getFromStorage<any>(STORAGE_KEYS.POSTS);
-    return posts.filter(p => p.userId === userId);
-  };
-
-  const getAdminStats = async () => {
-    const users = getFromStorage<User>(STORAGE_KEYS.USERS);
-    const posts = getFromStorage<any>(STORAGE_KEYS.POSTS);
-    
-    return {
-      totalUsers: users.length,
-      activeUsers: users.filter(u => u.role === 'user').length,
-      totalPostsGenerated: posts.length,
-      revenue: users.length * 500
-    };
-  };
+  const [dbService] = useState(() => new UniversalDatabaseService());
 
   useEffect(() => {
-    console.log('Initializing Kawayan AI App (Simplified)...');
+    console.log('Initializing Kawayan AI App...');
 
     try {
       // Check for existing session on load
-      const currentUser = getCurrentUser();
+      const currentUser = dbService.getCurrentUser();
       if (currentUser) {
         console.log('Found existing session for user:', currentUser.email);
         handleLogin(currentUser);
       }
       
-      // Check URL hash for admin back door
-      if (window.location.hash === '#admin-portal') {
+      // Check URL path or hash for admin back door
+      const path = window.location.pathname;
+      const hash = window.location.hash;
+      
+      if (hash === '#admin-portal' || path === '/admin-portal') {
         setView(ViewState.ADMIN_LOGIN);
       }
 
@@ -150,47 +57,7 @@ const App: React.FC = () => {
     }
   }, [darkMode]);
 
-  // Initialize/Ensure Admin Exists
-  useEffect(() => {
-     const users = getFromStorage<User>(STORAGE_KEYS.USERS);
-     const adminEmail = 'admin@kawayan.ph';
-     const adminIndex = users.findIndex(u => u.email === adminEmail);
-     
-     const defaultAdmin: User = {
-        id: 'admin-1',
-        email: adminEmail,
-        passwordHash: 'client_admin123',
-        role: 'admin',
-        businessName: 'Kawayan Admin'
-     };
-
-     if (adminIndex === -1) {
-        users.push(defaultAdmin);
-        saveToStorage(STORAGE_KEYS.USERS, users);
-        console.log('Default admin user created');
-     } else if (users[adminIndex].passwordHash !== 'client_admin123') {
-        // Fix stale admin password
-        users[adminIndex] = defaultAdmin;
-        saveToStorage(STORAGE_KEYS.USERS, users);
-        console.log('Admin user updated with correct credentials');
-     }
-
-     // Initialize Support User
-     const supportEmail = 'support@kawayan.ph';
-     if (!users.find(u => u.email === supportEmail)) {
-        users.push({
-           id: 'support-1',
-           email: supportEmail,
-           passwordHash: 'client_support123',
-           role: 'support',
-           businessName: 'Kawayan Support Team'
-        });
-        saveToStorage(STORAGE_KEYS.USERS, users);
-        console.log('Default support user created');
-     }
-  }, []);
-
-  const handleLogin = (loggedInUser: User) => {
+  const handleLogin = async (loggedInUser: User) => {
     setUser(loggedInUser);
     
     if (loggedInUser.role === 'admin') {
@@ -199,7 +66,8 @@ const App: React.FC = () => {
       setView(ViewState.SUPPORT_DASHBOARD);
     } else {
       // Check if user has a profile
-      getProfile(loggedInUser.id).then(profile => {
+      try {
+        const profile = await dbService.getProfile(loggedInUser.id);
         if (profile) {
           setBrandProfile(profile);
           setView(ViewState.CALENDAR);
@@ -207,12 +75,15 @@ const App: React.FC = () => {
           // No profile, go to survey
           setView(ViewState.SURVEY);
         }
-      });
+      } catch (error) {
+        console.error('Error fetching profile:', error);
+        setView(ViewState.SURVEY);
+      }
     }
   };
 
   const handleLogout = async () => {
-    await logoutUser();
+    await dbService.logoutUser();
     setUser(null);
     setBrandProfile(null);
     setView(ViewState.LANDING);
@@ -221,28 +92,25 @@ const App: React.FC = () => {
   const handleSurveyComplete = async (profileData: BrandProfile) => {
     if (!user) return;
     const newProfile = { ...profileData, userId: user.id };
-    await saveProfile(newProfile);
-    setBrandProfile(newProfile);
-    setView(ViewState.CALENDAR);
+    try {
+      await dbService.saveProfile(newProfile);
+      setBrandProfile(newProfile);
+      setView(ViewState.CALENDAR);
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      alert('Failed to save profile. Please try again.');
+    }
   };
 
   const handleProfileUpdate = async (profileData: BrandProfile) => {
-    await saveProfile(profileData);
+    await dbService.saveProfile(profileData);
     setBrandProfile(profileData);
   };
 
   const handleUserUpdate = async (updatedUser: User) => {
-    // In a real app, this would be an API call
-    const users = getFromStorage<User>(STORAGE_KEYS.USERS);
-    const index = users.findIndex(u => u.id === updatedUser.id);
-    if (index !== -1) {
-      users[index] = updatedUser;
-      saveToStorage(STORAGE_KEYS.USERS, users);
-      setUser(updatedUser);
-      // Update session if it's the current user
-      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(updatedUser));
-      alert("Account details updated successfully.");
-    }
+    // Note: Password update would need special handling in backend
+    // For now we just alert as this is a prototype
+    alert("Profile updates are currently managed via account settings. Feature coming soon.");
   };
 
   // Safe navigation guard for logged in users

@@ -1,113 +1,89 @@
-// Client-compatible database service for browser environment
 import { User, BrandProfile, GeneratedPost } from '../types';
-import { ValidationService } from './validationService';
 import { logger } from '../utils/logger';
 
 export class ClientDatabaseService {
-  // Use localStorage for client-side storage when browser environment
-  private isBrowser = typeof window !== 'undefined';
-  private STORAGE_KEYS = {
-    USERS: 'kawayan_users',
-    PROFILES: 'kawayan_profiles',
-    POSTS: 'kawayan_posts',
-    SESSION: 'kawayan_session',
-    JWT: 'kawayan_jwt'
-  };
+  private baseUrl = '/api';
 
-  private get = <T>(key: string): T[] => {
-    if (!this.isBrowser) return [];
-    try {
-      const data = localStorage.getItem(key);
-      return data ? JSON.parse(data) : [];
-    } catch (error) {
-      logger.error('Error reading from localStorage', { key, error });
-      return [];
-    }
-  };
-
-  private save = (key: string, data: any) => {
-    if (!this.isBrowser) return;
-    try {
-      localStorage.setItem(key, JSON.stringify(data));
-    } catch (error) {
-      logger.error('Error saving to localStorage', { key, error });
-    }
-  };
+  private getHeaders(): HeadersInit {
+    const token = localStorage.getItem('kawayan_jwt');
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    };
+  }
 
   // --- Users (Auth) ---
   async createUser(email: string, password: string, role: 'user' | 'admin' = 'user', businessName?: string): Promise<User | null> {
     try {
-      // Validate inputs
-      if (!ValidationService.validateEmail(email)) {
-        throw new Error('Invalid email format');
+      const response = await fetch(`${this.baseUrl}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, role, businessName })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Registration failed');
       }
 
-      const users = this.get<User>(this.STORAGE_KEYS.USERS);
-      if (users.find(u => u.email === email)) return null;
-
-      // Simple client-side password storage (not secure for production!)
-      const newUser: User = {
-        id: Date.now().toString(),
-        email,
-        passwordHash: `client_${password}`, // Client-side marker
-        role,
-        businessName
-      };
+      const { user, token } = await response.json();
       
-      users.push(newUser);
-      this.save(this.STORAGE_KEYS.USERS, users);
+      // Store session
+      localStorage.setItem('kawayan_jwt', token);
+      localStorage.setItem('kawayan_session', JSON.stringify(user));
       
-      logger.info('User created (client mode)', { userId: newUser.id, email, role });
-      return newUser;
+      return user;
     } catch (error) {
-      logger.error('Error creating user (client mode)', { email, error });
+      logger.error('Error creating user (api)', { email, error });
       return null;
     }
   }
 
   async loginUser(email: string, password: string): Promise<{ user: User; token: string } | null> {
     try {
-      const users = this.get<User>(this.STORAGE_KEYS.USERS);
-      const user = users.find(u => u.email === email && (u.passwordHash === `client_${password}` || u.passwordHash.includes('admin123')));
-      
-      if (!user) {
-        logger.warn('Login failed (client mode)', { email });
+      const response = await fetch(`${this.baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+
+      if (!response.ok) {
         return null;
       }
 
-      // Create simple client-side "token"
-      const token = `client_${user.id}_${Date.now()}`;
+      const { user, token } = await response.json();
       
       // Store session
-      localStorage.setItem(this.STORAGE_KEYS.JWT, token);
-      localStorage.setItem(this.STORAGE_KEYS.SESSION, JSON.stringify(user));
+      localStorage.setItem('kawayan_jwt', token);
+      localStorage.setItem('kawayan_session', JSON.stringify(user));
       
-      logger.info('User logged in (client mode)', { userId: user.id, email });
       return { user, token };
     } catch (error) {
-      logger.error('Error logging in user (client mode)', { email, error });
+      logger.error('Error logging in user (api)', { email, error });
       return null;
     }
   }
 
   async logoutUser(): Promise<void> {
     try {
-      localStorage.removeItem(this.STORAGE_KEYS.SESSION);
-      localStorage.removeItem(this.STORAGE_KEYS.JWT);
-      logger.info('User logged out (client mode)');
+      await fetch(`${this.baseUrl}/auth/logout`, {
+        method: 'POST',
+        headers: this.getHeaders()
+      });
     } catch (error) {
-      logger.error('Error logging out user (client mode)', { error });
+      logger.error('Error logging out (api)', { error });
+    } finally {
+      localStorage.removeItem('kawayan_session');
+      localStorage.removeItem('kawayan_jwt');
     }
   }
 
+  // Helper for synchronous access, kept for compatibility
   getCurrentUser(): User | null {
-    if (!this.isBrowser) return null;
-    
     try {
-      const session = localStorage.getItem(this.STORAGE_KEYS.SESSION);
+      const session = localStorage.getItem('kawayan_session');
       return session ? JSON.parse(session) : null;
     } catch (error) {
-      logger.error('Error getting current user (client mode)', { error });
       return null;
     }
   }
@@ -115,29 +91,31 @@ export class ClientDatabaseService {
   // --- Profiles ---
   async saveProfile(profile: BrandProfile): Promise<void> {
     try {
-      const profiles = this.get<BrandProfile>(this.STORAGE_KEYS.PROFILES);
-      const existingIndex = profiles.findIndex(p => p.userId === profile.userId);
-      
-      if (existingIndex >= 0) {
-        profiles[existingIndex] = profile;
-      } else {
-        profiles.push(profile);
-      }
-      
-      this.save(this.STORAGE_KEYS.PROFILES, profiles);
-      logger.info('Profile saved (client mode)', { userId: profile.userId });
+      const response = await fetch(`${this.baseUrl}/profiles`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(profile)
+      });
+
+      if (!response.ok) throw new Error('Failed to save profile');
     } catch (error) {
-      logger.error('Error saving profile (client mode)', { userId: profile.userId, error });
+      logger.error('Error saving profile (api)', { userId: profile.userId, error });
       throw error;
     }
   }
 
   async getProfile(userId: string): Promise<BrandProfile | undefined> {
     try {
-      const profiles = this.get<BrandProfile>(this.STORAGE_KEYS.PROFILES);
-      return profiles.find(p => p.userId === userId);
+      const response = await fetch(`${this.baseUrl}/profiles/${userId}`, {
+        headers: this.getHeaders()
+      });
+
+      if (response.status === 404) return undefined;
+      if (!response.ok) throw new Error('Failed to fetch profile');
+
+      return await response.json();
     } catch (error) {
-      logger.error('Error getting profile (client mode)', { userId, error });
+      logger.error('Error getting profile (api)', { userId, error });
       return undefined;
     }
   }
@@ -145,30 +123,59 @@ export class ClientDatabaseService {
   // --- Posts ---
   async savePost(post: GeneratedPost): Promise<void> {
     try {
-      const posts = this.get<GeneratedPost>(this.STORAGE_KEYS.POSTS);
-      const existingIndex = posts.findIndex(p => p.id === post.id);
-      
-      if (existingIndex >= 0) {
-        posts[existingIndex] = post;
-      } else {
-        posts.push(post);
-      }
-      
-      this.save(this.STORAGE_KEYS.POSTS, posts);
-      logger.info('Post saved (client mode)', { postId: post.id, userId: post.userId });
+      const response = await fetch(`${this.baseUrl}/posts`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(post)
+      });
+
+      if (!response.ok) throw new Error('Failed to save post');
     } catch (error) {
-      logger.error('Error saving post (client mode)', { postId: post.id, error });
+      logger.error('Error saving post (api)', { postId: post.id, error });
       throw error;
     }
   }
 
   async getUserPosts(userId: string): Promise<GeneratedPost[]> {
     try {
-      const posts = this.get<GeneratedPost>(this.STORAGE_KEYS.POSTS);
-      return posts.filter(p => p.userId === userId);
+      const response = await fetch(`${this.baseUrl}/posts/user/${userId}`, {
+        headers: this.getHeaders()
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch posts');
+      return await response.json();
     } catch (error) {
-      logger.error('Error getting user posts (client mode)', { userId, error });
+      logger.error('Error getting user posts (api)', { userId, error });
       return [];
+    }
+  }
+
+  async savePlan(userId: string, month: string, ideas: any[]): Promise<void> {
+    try {
+      const response = await fetch(`${this.baseUrl}/plans`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ userId, month, ideas })
+      });
+
+      if (!response.ok) throw new Error('Failed to save plan');
+    } catch (error) {
+      logger.error('Error saving plan (api)', { userId, month, error });
+      throw error;
+    }
+  }
+
+  async getPlan(userId: string, month: string): Promise<any[] | null> {
+    try {
+      const response = await fetch(`${this.baseUrl}/plans/${userId}/${month}`, {
+        headers: this.getHeaders()
+      });
+
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (error) {
+      logger.error('Error getting plan (api)', { userId, month, error });
+      return null;
     }
   }
 
@@ -178,44 +185,37 @@ export class ClientDatabaseService {
     activeUsers: number;
     totalPostsGenerated: number;
     revenue: number;
+    revenueData: { name: string; value: number }[];
+    churnData: { name: string; value: number }[];
   }> {
     try {
-      const users = this.get<User>(this.STORAGE_KEYS.USERS);
-      const posts = this.get<GeneratedPost>(this.STORAGE_KEYS.POSTS);
-      
-      const totalUsers = users.length;
-      const activeUsers = users.filter(u => u.role === 'user').length;
-      const totalPostsGenerated = posts.length;
-      const revenue = totalUsers * 500;
-      
-      return {
-        totalUsers,
-        activeUsers,
-        totalPostsGenerated,
-        revenue
-      };
+      const response = await fetch(`${this.baseUrl}/admin/stats`, {
+        headers: this.getHeaders()
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch stats');
+      return await response.json();
     } catch (error) {
-      logger.error('Error getting admin stats (client mode)', { error });
+      logger.error('Error getting admin stats (api)', { error });
       return {
         totalUsers: 0,
         activeUsers: 0,
         totalPostsGenerated: 0,
-        revenue: 0
+        revenue: 0,
+        revenueData: [],
+        churnData: []
       };
     }
   }
 
   // --- Health Check ---
   async healthCheck(): Promise<{ status: string; timestamp: string }> {
-    return {
-      status: 'healthy',
-      timestamp: new Date().toISOString()
-    };
-  }
-
-  // --- Migration Check (always false for client) ---
-  isMigrationNeeded(): boolean {
-    return false;
+    try {
+      const response = await fetch(`${this.baseUrl}/health`);
+      return await response.json();
+    } catch (error) {
+      return { status: 'unhealthy', timestamp: new Date().toISOString() };
+    }
   }
 
   // --- Client Detection ---
