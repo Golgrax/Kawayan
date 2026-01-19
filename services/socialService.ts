@@ -26,22 +26,33 @@ class SocialMediaService {
     localStorage.setItem(SocialMediaService.STORAGE_KEY, JSON.stringify(data));
   }
 
-  // 1. Connect Account (Simulates OAuth Flow)
-  async connectAccount(platform: 'facebook' | 'instagram' | 'tiktok'): Promise<boolean> {
-    console.log(`Connecting to ${platform}...`);
-    // In a real app, this would redirect to: https://www.facebook.com/v12.0/dialog/oauth?...
+  // 1. Connect Account (Redirects to real OAuth)
+  async connectAccount(platform: 'facebook' | 'instagram' | 'tiktok'): Promise<void> {
+    console.log(`Redirecting to ${platform} Auth...`);
     
-    // Simulate network latency
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    const redirectUri = `${window.location.origin}/auth/callback/${platform}`;
+    let authUrl = '';
 
-    const connections = this.getConnections();
-    connections[platform] = {
-      connected: true,
-      token: `mock_token_${Date.now()}`, // Store a "token"
-      connectedAt: new Date().toISOString()
-    };
-    this.saveConnections(connections);
-    return true;
+    if (platform === 'facebook' || platform === 'instagram') {
+      const appId = platform === 'facebook' 
+        ? (import.meta as any).env.VITE_FACEBOOK_APP_ID 
+        : (import.meta as any).env.VITE_INSTAGRAM_APP_ID;
+      
+      if (!appId) {
+        alert(`OAUTH SETUP REQUIRED: Please configure VITE_${platform.toUpperCase()}_APP_ID in .env`);
+        return;
+      }
+      authUrl = `https://www.facebook.com/v12.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=public_profile,email,pages_show_list,pages_read_engagement`;
+    } else if (platform === 'tiktok') {
+      const clientKey = (import.meta as any).env.VITE_TIKTOK_CLIENT_KEY;
+      if (!clientKey) {
+        alert(`OAUTH SETUP REQUIRED: Please configure VITE_TIKTOK_CLIENT_KEY in .env`);
+        return;
+      }
+      authUrl = `https://www.tiktok.com/auth/authorize?client_key=${clientKey}&scope=user.info.basic,video.list&redirect_uri=${redirectUri}&response_type=code`;
+    }
+
+    window.location.href = authUrl;
   }
 
   // 2. Disconnect

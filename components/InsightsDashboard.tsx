@@ -85,9 +85,12 @@ const InsightsDashboard: React.FC = () => {
   };
 
   const handleConnect = async (platform: 'facebook' | 'instagram') => {
-    setLoading(true);
-    await socialService.connectAccount(platform);
-    await loadData();
+    try {
+      await socialService.connectAccount(platform);
+      // The user is redirected, so we don't need to manually update state here.
+    } catch (error) {
+      console.error('Failed to connect:', error);
+    }
   };
 
   const handleDisconnect = async (platform: string) => {

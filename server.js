@@ -275,6 +275,7 @@ app.post('/api/wallet/create-invoice', authenticateToken, async (req, res) => {
     const invoice = await response.json();
     
     if (!response.ok) {
+      logger.error('Xendit API Failure', { status: response.status, data: invoice });
       throw new Error(invoice.message || 'Xendit Invoice creation failed');
     }
 

@@ -162,9 +162,9 @@ const Billing: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         {/* Wallet Balance Card */}
-        <div className="md:col-span-2 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-8 shadow-xl relative overflow-hidden">
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-8 shadow-xl relative overflow-hidden">
            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500 rounded-full blur-[100px] opacity-20"></div>
            
            <div className="relative z-10">
@@ -200,30 +200,6 @@ const Billing: React.FC = () => {
                </button>
              </div>
            </div>
-        </div>
-
-        {/* Payment Method */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
-           <div>
-             <h3 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-               <CreditCard className="w-5 h-5 text-emerald-600" /> Payment Methods
-             </h3>
-             <p className="text-xs text-slate-500 mb-4">Secured by Xendit</p>
-             
-             <div className="space-y-2 mb-4">
-               <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-600 flex items-center gap-3 opacity-75">
-                  <Smartphone className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm font-medium dark:text-slate-300">GCash •••• 1234</span>
-               </div>
-             </div>
-           </div>
-           
-           <button 
-             onClick={() => setShowPaymentModal(true)}
-             className="w-full py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
-           >
-             Update Payment Method
-           </button>
         </div>
       </div>
 
