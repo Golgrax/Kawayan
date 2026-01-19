@@ -28,22 +28,12 @@ const Billing: React.FC = () => {
     if (!topUpAmount || isNaN(Number(topUpAmount))) return;
     setProcessing(true);
     try {
-      const { referenceId, recipientNumber } = await paymentService.initiateTopUp(Number(topUpAmount), 'GCASH');
+      const { checkoutUrl } = await paymentService.initiateTopUp(Number(topUpAmount));
       
-      const confirm = window.confirm(
-        `Please send ₱${topUpAmount} via GCash to:\n\n` +
-        `Number: ${recipientNumber}\n` +
-        `Reference: ${referenceId}\n\n` +
-        `Once sent, click OK to confirm. (Verification is currently automatic for this demo)`
-      );
-
-      if (confirm) {
-        await paymentService.confirmPayment(referenceId, Number(topUpAmount));
-        await loadWallet();
-        alert("Payment Submitted! Your balance will be updated once we verify your GCash transfer. This usually takes 5-10 minutes.");
-      }
-    } catch (error) {
-      alert("Payment Failed.");
+      // Redirect to Xendit Checkout
+      window.location.href = checkoutUrl;
+    } catch (error: any) {
+      alert(error.message || "Payment Initialization Failed.");
     } finally {
       setProcessing(false);
       setTopUpAmount('');

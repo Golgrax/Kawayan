@@ -42,20 +42,29 @@ class PaymentService {
     return response.json();
   }
 
-  // Initiate Top-up (Returns info for manual payment or gateway)
-  async initiateTopUp(amount: number, method: 'GCASH' | 'MAYA' | 'CARD'): Promise<{ checkoutUrl: string, referenceId: string, recipientNumber?: string }> {
+  // Initiate Top-up (Returns Xendit Checkout URL)
+  async initiateTopUp(amount: number): Promise<{ checkoutUrl: string, referenceId: string }> {
     const userId = this.getUserId();
     if (!userId) throw new Error("Not authenticated");
 
-    const referenceId = `txn_${Date.now()}`;
-    const recipientNumber = (import.meta as any).env.VITE_PAYMENT_RECIPIENT_NUMBER || '09562734369';
+    const response = await fetch('/api/wallet/create-invoice', {
+      method: 'POST',
+      headers: this.getAuthHeader(),
+      body: JSON.stringify({
+        userId,
+        amount
+      })
+    });
 
-    // For manual GCash/Maya, we return the recipient number
-    // In a real automated setup, this would call Xendit API
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Failed to create payment invoice");
+    }
+
+    const data = await response.json();
     return {
-      checkoutUrl: `https://checkout.xendit.co/web/${referenceId}`, 
-      referenceId,
-      recipientNumber
+      checkoutUrl: data.checkoutUrl,
+      referenceId: data.externalId
     };
   }
 

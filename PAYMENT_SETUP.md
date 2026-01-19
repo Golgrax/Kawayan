@@ -1,51 +1,35 @@
-# Kawayan AI - Payment Setup Guide (Legit)
+# Kawayan AI - Payment Setup Guide (Xendit Automated)
 
-This guide explains how to manage the manual payment system and how to transition to an automated gateway.
+The system is now integrated with **Xendit** for fully automated payments.
 
-## 1. Manual GCash Verification (Current Setup)
+## 1. How it works (Automated)
 
-Currently, the system is configured for **Manual Verification** to ensure security and prevent "fake" simulated credits.
+1.  **User Side:** The user enters an amount in the Billing dashboard.
+2.  **Invoice Creation:** The backend calls Xendit API to create a unique invoice.
+3.  **Redirect:** The user is redirected to Xendit's secure checkout page (supports GCash, Maya, QRIS, Cards).
+4.  **Transaction Record:** A `PENDING` transaction is recorded in the database immediately.
+5.  **Webhook:** Once the user pays, Xendit sends a webhook to `/api/webhooks/xendit`.
+6.  **Automation:** The system verifies the webhook token, identifies the transaction, approves it, and updates the user's balance instantly.
 
-### How it works:
-1.  **User Side:** The user enters an amount and sees your GCash number (`09562734369`).
-2.  **Submission:** When they click "OK", a transaction is created in the database with status `PENDING`. Their balance **does not** increase yet.
-3.  **Admin Verification:** You (the admin) check your GCash app for the incoming transfer matching the Reference ID.
-4.  **Approval:** You approve the transaction via the database or an admin API call, which then moves the status to `COMPLETED` and adds the balance.
+## 2. Configuration
 
-### How to Approve a Transaction Manually:
-You can use the built-in admin endpoint:
+Current credentials in `.env`:
+- `XENDIT_SECRET_KEY`: Used for API calls (Basic Auth).
+- `XENDIT_WEBHOOK_VERIFICATION_TOKEN`: Used to verify incoming webhooks from Xendit.
+
+### Webhook URL
+Ensure your Xendit Dashboard is configured with the following Callback URL for **Invoices**:
+`https://your-domain.com/api/webhooks/xendit`
+
+---
+
+## 3. Manual Fallback
+
+Even with automation, you can still manually approve a transaction if needed:
+
 ```bash
-# Replace <JWT_TOKEN> with your admin token and <TXN_ID> with the txn_... id from the history
 curl -X POST http://localhost:3001/api/admin/wallet/approve \
-  -H "Authorization: Bearer <JWT_TOKEN>" \
+  -H "Authorization: Bearer <ADMIN_JWT_TOKEN>" \
   -H "Content-Type: application/json" \
-  -d '{"transactionId": "txn_123456789"}'
+  -d '{"transactionId": "txn_..."}'
 ```
-
----
-
-## 2. Transitioning to Automated Payments (Xendit / PayMongo)
-
-To remove the manual step and have balance credited instantly upon payment, follow these steps:
-
-### Step A: Get API Keys
-Sign up for [Xendit](https://www.xendit.co/) or [PayMongo](https://www.paymongo.com/) and get your **Secret Key**.
-
-### Step B: Add to `.env`
-```env
-XENDIT_SECRET_KEY=xnd_development_...
-PAYMENT_WEBHOOK_SECRET=your_webhook_signing_secret
-```
-
-### Step C: Update `paymentService.ts`
-Replace the `initiateTopUp` logic to call the Xendit Invoice API instead of showing a static number.
-
-### Step D: Implement Webhook
-Create a new route `app.post('/api/webhooks/payments', ...)` in `server.js` that listens for Xendit's "Invoice Paid" event and calls `dbService.approveTransaction()` automatically.
-
----
-
-## 3. Configuration Summary
-- **Recipient Number:** Set in `.env` as `VITE_PAYMENT_RECIPIENT_NUMBER`.
-- **Default Status:** All top-ups start as `PENDING`.
-- **Subscription Cost:** Hardcoded as `499 PHP` in `Billing.tsx`.
