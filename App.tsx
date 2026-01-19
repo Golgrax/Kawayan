@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import { ViewState, BrandProfile, User } from './types';
 import BrandSurvey from './components/BrandSurvey';
 import ContentCalendar from './components/ContentCalendar';
@@ -10,6 +11,7 @@ import SupportWidget from './components/SupportWidget';
 import InsightsDashboard from './components/InsightsDashboard';
 import Billing from './components/Billing';
 import SupportDashboard from './components/SupportDashboard';
+import AuthCallback from './components/AuthCallback';
 import UniversalDatabaseService from './services/universalDatabaseService';
 import { LayoutDashboard, LogOut, Lock, ArrowRight, Settings as SettingsIcon, BarChart3, CreditCard } from 'lucide-react';
 
@@ -215,34 +217,39 @@ const App: React.FC = () => {
       {/* Main Content */}
       <main className={`flex-grow ${view === ViewState.LOGIN || view === ViewState.SIGNUP || view === ViewState.ADMIN_LOGIN ? 'flex items-center justify-center' : ''}`}>
         <div className={`w-full ${view === ViewState.CALENDAR || view === ViewState.ADMIN_DASHBOARD || view === ViewState.SETTINGS ? 'max-w-[1600px] mx-auto py-6 px-4 sm:px-6 lg:px-8' : 'w-full'}`}>
-          {(() => {
-            switch (view) {
-              case ViewState.LANDING:
-                return <LandingPage onNavigate={setView} />;
-              case ViewState.LOGIN:
-                return <Login onLogin={handleLogin} onNavigate={setView} />;
-              case ViewState.SIGNUP:
-                return <Login onLogin={handleLogin} onNavigate={setView} initialIsSignUp={true} />;
-              case ViewState.ADMIN_LOGIN:
-                return <Login onLogin={handleLogin} onNavigate={setView} isAdminLogin={true} />;
-              case ViewState.SURVEY:
-                return <BrandSurvey onComplete={handleSurveyComplete} />;
-              case ViewState.CALENDAR:
-                return (user && brandProfile) ? <ContentCalendar profile={brandProfile} userId={user.id} /> : <div>Loading...</div>;
-              case ViewState.SETTINGS:
-                return (brandProfile) ? <Settings profile={brandProfile} user={user} onProfileUpdate={handleProfileUpdate} onUserUpdate={handleUserUpdate} darkMode={darkMode} toggleDarkMode={() => setDarkMode(!darkMode)} onClose={() => setView(ViewState.CALENDAR)} /> : <div>Loading...</div>;
-              case ViewState.INSIGHTS:
-                return <InsightsDashboard />;
-              case ViewState.BILLING:
-                return <Billing />;
-              case ViewState.SUPPORT_DASHBOARD:
-                return <SupportDashboard />;
-              case ViewState.ADMIN_DASHBOARD:
-                return (user && user.role === 'admin') ? <AdminDashboard /> : <div className="text-center p-10">Access Denied</div>;
-              default:
-                return <LandingPage onNavigate={setView} />;
-            }
-          })()}
+          <Routes>
+            <Route path="/auth/callback/:platform" element={<AuthCallback />} />
+            <Route path="*" element={
+              (() => {
+                switch (view) {
+                  case ViewState.LANDING:
+                    return <LandingPage onNavigate={setView} />;
+                  case ViewState.LOGIN:
+                    return <Login onLogin={handleLogin} onNavigate={setView} />;
+                  case ViewState.SIGNUP:
+                    return <Login onLogin={handleLogin} onNavigate={setView} initialIsSignUp={true} />;
+                  case ViewState.ADMIN_LOGIN:
+                    return <Login onLogin={handleLogin} onNavigate={setView} isAdminLogin={true} />;
+                  case ViewState.SURVEY:
+                    return <BrandSurvey onComplete={handleSurveyComplete} />;
+                  case ViewState.CALENDAR:
+                    return (user && brandProfile) ? <ContentCalendar profile={brandProfile} userId={user.id} /> : <div>Loading...</div>;
+                  case ViewState.SETTINGS:
+                    return (brandProfile) ? <Settings profile={brandProfile} user={user} onProfileUpdate={handleProfileUpdate} onUserUpdate={handleUserUpdate} darkMode={darkMode} toggleDarkMode={() => setDarkMode(!darkMode)} onClose={() => setView(ViewState.CALENDAR)} /> : <div>Loading...</div>;
+                  case ViewState.INSIGHTS:
+                    return <InsightsDashboard />;
+                  case ViewState.BILLING:
+                    return <Billing />;
+                  case ViewState.SUPPORT_DASHBOARD:
+                    return <SupportDashboard />;
+                  case ViewState.ADMIN_DASHBOARD:
+                    return (user && user.role === 'admin') ? <AdminDashboard /> : <div className="text-center p-10">Access Denied</div>;
+                  default:
+                    return <LandingPage onNavigate={setView} />;
+                }
+              })()
+            } />
+          </Routes>
         </div>
       </main>
       

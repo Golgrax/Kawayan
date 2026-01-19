@@ -24,6 +24,7 @@
     "lucide-react": "^0.560.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
+    "react-router-dom": "^7.12.0",
     "recharts": "^3.5.1",
     "three": "0.160.0",
     "zod": "^4.3.5"

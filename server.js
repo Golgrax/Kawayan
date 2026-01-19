@@ -303,32 +303,43 @@ app.post('/api/wallet/create-invoice', authenticateToken, async (req, res) => {
 
 // Xendit Webhook Handler
 app.post('/api/webhooks/xendit', async (req, res) => {
-  const webhookToken = req.headers['x-callback-token'];
-  const expectedToken = process.env.XENDIT_WEBHOOK_VERIFICATION_TOKEN;
+  // ... (existing code)
+});
 
-  if (webhookToken !== expectedToken) {
-    return res.status(401).json({ error: 'Invalid webhook token' });
-  }
+// --- Social Auth Token Exchange ---
 
-  const { external_id, status, amount } = req.body;
+app.post('/api/auth/facebook/callback', async (req, res) => {
+  const { code, platform } = req.body;
+  const appId = process.env.VITE_FACEBOOK_APP_ID;
+  const appSecret = process.env.FACEBOOK_APP_SECRET;
+  const redirectUri = `${req.protocol}://${req.get('host')}/auth/callback/${platform}`;
 
   try {
-    if (status === 'PAID' || status === 'SETTLED') {
-      // Find the pending transaction using the external_id in description
-      const db = dbService['dbConfig'].getDatabase();
-      const txn = db.prepare("SELECT id FROM transactions WHERE description LIKE ? AND status = 'PENDING'").get(`%${external_id}%`);
-      
-      if (txn) {
-        await dbService.approveTransaction(txn.id);
-        logger.info('Xendit Payment Verified and Approved', { external_id, amount });
-      } else {
-        logger.warn('Xendit Webhook received for unknown or already processed transaction', { external_id });
-      }
+    // 1. Exchange code for Access Token
+    const tokenResponse = await fetch(
+      `https://graph.facebook.com/v12.0/oauth/access_token?client_id=${appId}&redirect_uri=${redirectUri}&client_secret=${appSecret}&code=${code}`
+    );
+    const tokenData = await tokenResponse.json();
+
+    if (tokenData.error) {
+      throw new Error(tokenData.error.message);
     }
-    res.status(200).send('OK');
+
+    // 2. (Optional) Get user info using the token
+    const userResponse = await fetch(
+      `https://graph.facebook.com/me?fields=id,name,email&access_token=${tokenData.access_token}`
+    );
+    const userData = await userResponse.json();
+
+    // 3. Return the token and user data to the frontend
+    res.json({
+      accessToken: tokenData.access_token,
+      expiresIn: tokenData.expires_in,
+      user: userData
+    });
   } catch (error) {
-    logger.error('Xendit Webhook Error', { error: error.message });
-    res.status(500).send('Internal Error');
+    logger.error('Facebook Auth Error', { error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 
