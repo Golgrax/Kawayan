@@ -15,17 +15,17 @@ export class DatabaseService {
   // --- Users (Auth) ---
   async createUser(email: string, password: string, role: 'user' | 'admin' | 'support' = 'user', businessName?: string): Promise<User | null> {
     const db = this.dbConfig.getDatabase();
+
+    // Validate password strength before DB operations
+    const passwordValidation = JWTService.validatePasswordStrength(password);
+    if (!passwordValidation.isValid) {
+      throw new Error(`Password requirements: ${passwordValidation.errors.join(', ')}`);
+    }
     
     try {
       // Check if user already exists
       const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
       if (existingUser) return null;
-      
-      // Validate password strength
-      const passwordValidation = JWTService.validatePasswordStrength(password);
-      if (!passwordValidation.isValid) {
-        throw new Error(`Password requirements: ${passwordValidation.errors.join(', ')}`);
-      }
       
       // Hash password with JWT service
       const passwordHash = await JWTService.hashPassword(password);
@@ -47,7 +47,7 @@ export class DatabaseService {
       return newUser;
     } catch (error) {
       logger.logDatabaseError('createUser', error, email);
-      return null;
+      throw error; // Rethrow unexpected DB errors so controller can handle (or return null if we really want to hide DB errors, but validation must throw)
     }
   }
   
@@ -114,6 +114,25 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
       db.prepare('UPDATE users SET theme = ? WHERE id = ?').run(theme, userId);
     } catch (error) {
       console.error('Error updating user theme:', error);
+      throw error;
+    }
+  }
+
+  async updateUserPassword(userId: string, newPassword: string): Promise<boolean> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      // Validate password strength again (double check)
+      const passwordValidation = JWTService.validatePasswordStrength(newPassword);
+      if (!passwordValidation.isValid) {
+        throw new Error(`Password requirements: ${passwordValidation.errors.join(', ')}`);
+      }
+      
+      const passwordHash = await JWTService.hashPassword(newPassword);
+      
+      const result = db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, userId);
+      return result.changes > 0;
+    } catch (error) {
+      logger.logDatabaseError('updateUserPassword', error, userId);
       throw error;
     }
   }
@@ -457,6 +476,156 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     }
   }
   
+  // --- Social Media Connections ---
+  async saveSocialConnection(userId: string, platform: string, data: any): Promise<void> {
+    const db = this.dbConfig.getDatabase();
+    const id = `${userId}-${platform}`;
+    
+    try {
+      const existing = db.prepare('SELECT id FROM social_connections WHERE user_id = ? AND platform = ?').get(userId, platform);
+      
+      if (existing) {
+        db.prepare(`
+          UPDATE social_connections 
+          SET connected = ?, username = ?, access_token = ?, followers = ?, engagement = ?, data = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE user_id = ? AND platform = ?
+        `).run(
+          data.connected ? 1 : 0,
+          data.username || null,
+          data.accessToken || null,
+          data.followers || 0,
+          data.engagement || 0,
+          JSON.stringify(data),
+          userId,
+          platform
+        );
+      } else {
+        db.prepare(`
+          INSERT INTO social_connections (id, user_id, platform, connected, username, access_token, followers, engagement, data)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          id,
+          userId,
+          platform,
+          data.connected ? 1 : 0,
+          data.username || null,
+          data.accessToken || null,
+          data.followers || 0,
+          data.engagement || 0,
+          JSON.stringify(data)
+        );
+      }
+    } catch (error) {
+      console.error('Error saving social connection:', error);
+      throw error;
+    }
+  }
+
+  async getSocialConnections(userId: string): Promise<any> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      const rows = db.prepare('SELECT * FROM social_connections WHERE user_id = ?').all(userId) as any[];
+      
+      // Convert to object keyed by platform
+      const connections: any = {};
+      rows.forEach(row => {
+        connections[row.platform] = {
+          ...JSON.parse(row.data),
+          connected: row.connected === 1,
+          username: row.username,
+          followers: row.followers,
+          engagement: row.engagement
+        };
+      });
+      
+      return connections;
+    } catch (error) {
+      console.error('Error getting social connections:', error);
+      return {};
+    }
+  }
+
+  // --- Support Tickets ---
+  async createTicket(ticket: any): Promise<void> {
+    const db = this.dbConfig.getDatabase();
+    
+    try {
+      db.prepare(`
+        INSERT INTO tickets (id, ticket_num, user_id, user_email, subject, priority, status, created_at, messages)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        ticket.id,
+        ticket.ticketNum,
+        ticket.userId,
+        ticket.userEmail,
+        ticket.subject,
+        ticket.priority,
+        ticket.status,
+        ticket.createdAt,
+        JSON.stringify(ticket.messages || [])
+      );
+    } catch (error) {
+      console.error('Error creating ticket:', error);
+      throw error;
+    }
+  }
+
+  async getTickets(userId: string): Promise<any[]> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      const rows = db.prepare('SELECT * FROM tickets WHERE user_id = ? ORDER BY created_at DESC').all(userId) as any[];
+      return rows.map(row => ({
+        id: row.id,
+        ticketNum: row.ticket_num,
+        userId: row.user_id,
+        userEmail: row.user_email,
+        subject: row.subject,
+        priority: row.priority,
+        status: row.status,
+        createdAt: row.created_at,
+        messages: JSON.parse(row.messages || '[]')
+      }));
+    } catch (error) {
+      console.error('Error getting tickets:', error);
+      return [];
+    }
+  }
+
+  async getAllTicketsAdmin(): Promise<any[]> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      const rows = db.prepare('SELECT * FROM tickets ORDER BY created_at DESC').all() as any[];
+      return rows.map(row => ({
+        id: row.id,
+        ticketNum: row.ticket_num,
+        userId: row.user_id,
+        userEmail: row.user_email,
+        subject: row.subject,
+        priority: row.priority,
+        status: row.status,
+        createdAt: row.created_at,
+        messages: JSON.parse(row.messages || '[]')
+      }));
+    } catch (error) {
+      console.error('Error getting all tickets:', error);
+      return [];
+    }
+  }
+
+  async updateTicket(ticketId: string, status: string, messages?: any[]): Promise<void> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      if (messages) {
+        db.prepare('UPDATE tickets SET status = ?, messages = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, JSON.stringify(messages), ticketId);
+      } else {
+        db.prepare('UPDATE tickets SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, ticketId);
+      }
+    } catch (error) {
+      console.error('Error updating ticket:', error);
+      throw error;
+    }
+  }
+
   // --- Admin Stats ---
   async getAdminStats(): Promise<{
     totalUsers: number;

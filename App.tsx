@@ -40,10 +40,9 @@ const App: React.FC = () => {
         setView(ViewState.ADMIN_LOGIN);
       }
 
-      // Check system preference for dark mode
-      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-         setDarkMode(true);
-      }
+      // Default to Light Mode (Removed auto-detection)
+      setDarkMode(false);
+      
     } catch (error) {
       console.error('Error initializing app:', error);
     }
@@ -61,7 +60,7 @@ const App: React.FC = () => {
   const handleLogin = async (loggedInUser: User) => {
     setUser(loggedInUser);
     
-    // Set theme from user preference
+    // Set theme from user preference (DB Priority)
     if (loggedInUser.theme === 'dark') {
       setDarkMode(true);
     } else {
@@ -95,6 +94,8 @@ const App: React.FC = () => {
     setUser(null);
     setBrandProfile(null);
     setView(ViewState.LANDING);
+    // Reset to default light mode on logout
+    setDarkMode(false);
   };
 
   const handleSurveyComplete = async (profileData: BrandProfile) => {
@@ -235,17 +236,17 @@ const App: React.FC = () => {
                   case ViewState.LANDING:
                     return <LandingPage onNavigate={setView} />;
                   case ViewState.LOGIN:
-                    return <Login onLogin={handleLogin} onNavigate={setView} />;
+                    return <Login onLogin={handleLogin} onNavigate={setView} darkMode={darkMode} toggleTheme={() => updateTheme(!darkMode)} />;
                   case ViewState.SIGNUP:
-                    return <Login onLogin={handleLogin} onNavigate={setView} initialIsSignUp={true} />;
+                    return <Login onLogin={handleLogin} onNavigate={setView} initialIsSignUp={true} darkMode={darkMode} toggleTheme={() => updateTheme(!darkMode)} />;
                   case ViewState.ADMIN_LOGIN:
-                    return <Login onLogin={handleLogin} onNavigate={setView} isAdminLogin={true} />;
+                    return <Login onLogin={handleLogin} onNavigate={setView} isAdminLogin={true} darkMode={darkMode} toggleTheme={() => updateTheme(!darkMode)} />;
                   case ViewState.SURVEY:
                     return <BrandSurvey onComplete={handleSurveyComplete} />;
                   case ViewState.CALENDAR:
                     return (user && brandProfile) ? <ContentCalendar profile={brandProfile} userId={user.id} /> : <div>Loading...</div>;
                   case ViewState.SETTINGS:
-                    return (brandProfile) ? <Settings profile={brandProfile} user={user} onProfileUpdate={handleProfileUpdate} onUserUpdate={handleUserUpdate} darkMode={darkMode} toggleDarkMode={() => setDarkMode(!darkMode)} onClose={() => setView(ViewState.CALENDAR)} /> : <div>Loading...</div>;
+                    return (brandProfile) ? <Settings profile={brandProfile} user={user} onProfileUpdate={handleProfileUpdate} onUserUpdate={handleUserUpdate} darkMode={darkMode} toggleDarkMode={() => updateTheme(!darkMode)} onClose={() => setView(ViewState.CALENDAR)} /> : <div>Loading...</div>;
                   case ViewState.INSIGHTS:
                     return <InsightsDashboard />;
                   case ViewState.BILLING:

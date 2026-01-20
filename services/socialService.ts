@@ -21,15 +21,13 @@ export interface SocialPlatformData {
   engagement: number;
   reach: number; // Single value from scraper
   reachData?: SocialMetric[]; // Time series data
+  error?: string;
+  connectedAt?: string;
+  accessToken?: string;
 }
 
 // Simulates a real API Service
 class SocialMediaService {
-  private static STORAGE_KEY = 'kawayan_social_connections';
-
-  private getConnections() {
-    return JSON.parse(localStorage.getItem(SocialMediaService.STORAGE_KEY) || '{}');
-  }
 
   // Helper to check for Sandbox Mode
   private isSandbox(): boolean {
@@ -40,71 +38,113 @@ class SocialMediaService {
     // Check if keys are missing or placeholders
     const missingKeys = !tiktokKey || tiktokKey.includes('your_') || !fbKey || fbKey.includes('your_');
     
-    console.log(`[SocialService] Check Sandbox: Dev=${isDev}, MissingKeys=${missingKeys} (TikTok: ${tiktokKey.slice(0,5)}..., FB: ${fbKey.slice(0,5)}...)`);
-    
     return isDev || missingKeys;
   }
 
   public sandboxMode = this.isSandbox();
 
-  private saveConnections(data: any) {
-    localStorage.setItem(SocialMediaService.STORAGE_KEY, JSON.stringify(data));
-    // Trigger a custom event so UI updates immediately
-    window.dispatchEvent(new Event('social-connections-updated'));
+  private getAuthHeaders(): HeadersInit {
+    const token = localStorage.getItem('kawayan_jwt');
+    return token ? { 
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    } : { 'Content-Type': 'application/json' };
   }
 
-  // 1. Connect Account (Now uses Username input instead of OAuth)
-  async connectAccount(platform: 'facebook' | 'instagram' | 'tiktok', username: string): Promise<void> {
+  // 1. Fetch all connections from DB
+  async fetchConnections(): Promise<Record<string, any>> {
+    try {
+      const response = await fetch('/api/social/connections', {
+        headers: this.getAuthHeaders()
+      });
+      if (!response.ok) return {};
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching connections:', error);
+      return {};
+    }
+  }
+
+  // 2. Connect Account (Now uses Username input instead of OAuth)
+  async connectAccount(platform: 'facebook' | 'instagram' | 'tiktok', username: string, extraData: any = {}): Promise<void> {
     console.log(`[SocialService] Connecting to ${platform} as ${username}...`);
     
-    // Simulate API verification delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-
-    const connections = this.getConnections();
-    connections[platform] = {
-      connected: true,
+    const data = {
+      username,
       connectedAt: new Date().toISOString(),
-      platformUser: {
-        name: username, // User provided username
-        id: `${platform}_${username}`
-      }
+      id: `${platform}_${username}`,
+      ...extraData
     };
-    this.saveConnections(connections);
-    
-    // Trigger update
-    window.dispatchEvent(new Event('social-connections-updated'));
+
+    try {
+      await fetch('/api/social/connections', {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ platform, data })
+      });
+      
+      // Trigger update
+      window.dispatchEvent(new Event('social-connections-updated'));
+    } catch (error) {
+      console.error('Error connecting account:', error);
+      throw error;
+    }
   }
 
-  // 2. Disconnect
+  // 3. Disconnect
   async disconnectAccount(platform: string): Promise<boolean> {
-    const connections = this.getConnections();
-    delete connections[platform];
-    this.saveConnections(connections);
-    return true;
+    try {
+      await fetch(`/api/social/connections/${platform}`, {
+        method: 'DELETE',
+        headers: this.getAuthHeaders()
+      });
+      window.dispatchEvent(new Event('social-connections-updated'));
+      return true;
+    } catch (error) {
+      console.error('Error disconnecting account:', error);
+      return false;
+    }
   }
 
-  // 3. Fetch Insights (Check Cache -> Then Backend Proxy)
+  // 4. Fetch Insights (Check Cache -> Then Backend Proxy)
   async getInsights(platform: 'facebook' | 'instagram' | 'tiktok'): Promise<SocialPlatformData | null> {
-    const connections = this.getConnections();
+    const connections = await this.fetchConnections();
+    const connection = connections[platform];
     
-    if (!connections[platform] || !connections[platform].connected) {
+    if (!connection || !connection.connected) {
       return null;
     }
 
-    const username = connections[platform].platformUser.name;
-    const cachedStats = connections[platform].lastStats;
-
-    // Return cached stats if available (persisted from Extension update)
-    if (cachedStats) {
-       return {
-         platform,
-         connected: true,
-         username: username,
-         ...cachedStats,
-       };
+    const username = connection.username;
+    // connection.data might contain the "lastStats" or "followers" directly if flattened by getSocialConnections
+    // In databaseService.ts getSocialConnections, we flatten: ...JSON.parse(row.data)
+    
+    // So `connection` has `followers`, `engagement`, `username`.
+    // Let's check if we have recent stats or need to refresh?
+    // For now, assume DB has latest or we force refresh if explicit.
+    // The previous code had a "cache" logic. Let's keep it simple: return what DB has.
+    // But if DB has 0 followers, maybe try scraping?
+    
+    if (connection.followers > 0) {
+      return {
+        platform,
+        connected: true,
+        username,
+        followers: connection.followers,
+        engagement: connection.engagement,
+        // Map other fields from connection object (which includes flattened JSON data)
+        following: connection.following,
+        likes: connection.likes,
+        posts: connection.posts,
+        views: connection.views,
+        interactions: connection.interactions,
+        visits: connection.visits,
+        netFollows: connection.netFollows,
+        reach: connection.reach || 0
+      };
     }
 
-    // No cache? Try backend scraper once
+    // Try backend scraper if no data
     let stats = { followers: 0, engagement: 0, isReal: false, following: 0, likes: 0 };
 
     try {
@@ -114,20 +154,19 @@ class SocialMediaService {
       if (response.ok && contentType && contentType.includes('application/json')) {
         stats = await response.json();
         
-        // If scraper succeeded, save it to cache immediately so next load is fast
+        // Save to DB
         if (stats.followers > 0) {
-           this.updateStats(platform, stats);
+           await this.updateStats(platform, stats);
         }
       }
     } catch (e) {
       console.error('Error fetching real stats:', e);
     }
 
-    // Even if backend fails, return the object with username so UI doesn't break
     return {
       platform,
       connected: true,
-      username: username, // Critical for UI "Update" button
+      username: username, 
       followers: stats.followers || 0,
       following: stats.following,
       likes: stats.likes,
@@ -141,35 +180,34 @@ class SocialMediaService {
     };
   }
 
-  // 5. Update Stats (Called by Dashboard when Extension scrapes data)
-  updateStats(platform: string, stats: any) {
-    const connections = this.getConnections();
-    if (connections[platform]) {
-      // Keep existing data, overwrite with new stats fields
-      connections[platform].lastStats = {
-        followers: stats.followers,
-        following: stats.following,
-        likes: stats.likes,
-        posts: stats.posts,
-        views: stats.views,
-        interactions: stats.interactions,
-        visits: stats.visits,
-        netFollows: stats.netFollows,
-        engagement: stats.engagement,
-        reach: stats.reach
-      };
-      connections[platform].lastStatsAt = new Date().toISOString();
-      this.saveConnections(connections);
-    }
+  // 5. Update Stats (Called by Dashboard when Extension scrapes data or we scrape)
+  async updateStats(platform: string, stats: any) {
+    // Just call connectAccount which calls POST /api/social/connections which updates/merges
+    // But we need to preserve existing username if not in stats
+    // Ideally we fetch first
+    const connections = await this.fetchConnections();
+    const current = connections[platform] || {};
+    
+    const newData = {
+      ...current,
+      ...stats,
+      followers: stats.followers, // Ensure top level fields update
+      engagement: stats.engagement
+    };
+    
+    // Remove "connected" boolean from data payload if it's there, 
+    // connectAccount/POST handles it but cleanly:
+    
+    await this.connectAccount(platform as any, current.username || stats.username, newData);
   }
 
-  // 4. Get All Connected Status
-  getConnectionStatus() {
-    const conns = this.getConnections();
+  // 6. Get All Connected Status
+  async fetchConnectionStatus() {
+    const conns = await this.fetchConnections();
     return {
-      facebook: !!conns.facebook,
-      instagram: !!conns.instagram,
-      tiktok: !!conns.tiktok
+      facebook: !!conns.facebook?.connected,
+      instagram: !!conns.instagram?.connected,
+      tiktok: !!conns.tiktok?.connected
     };
   }
 }

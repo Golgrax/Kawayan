@@ -33,7 +33,7 @@ const InsightsDashboard: React.FC = () => {
 
   const loadData = async () => {
     const data: SocialPlatformData[] = [];
-    const status = socialService.getConnectionStatus();
+    const status = await socialService.fetchConnectionStatus();
     const platforms: ('facebook' | 'instagram' | 'tiktok')[] = ['facebook', 'instagram', 'tiktok'];
     
     for (const p of platforms) {

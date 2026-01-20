@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { BrandProfile, User } from '../types';
 import { Save, User as UserIcon, MessageCircle, Target, Briefcase, Moon, Sun, Monitor, ArrowLeft, Lock, CreditCard, AlertTriangle, CheckCircle } from 'lucide-react';
 import { paymentService, Wallet } from '../services/paymentService';
+import UniversalDatabaseService from '../services/universalDatabaseService';
+import { ValidationService } from '../services/validationService';
 
 interface Props {
   profile: BrandProfile;
@@ -33,7 +35,9 @@ const Settings: React.FC<Props> = ({ profile, user, onProfileUpdate, onUserUpdat
 
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'profile' | 'account' | 'billing'>('profile');
+  const [dbService] = useState(() => new UniversalDatabaseService());
 
   useEffect(() => {
     setFormData({
@@ -67,14 +71,17 @@ const Settings: React.FC<Props> = ({ profile, user, onProfileUpdate, onUserUpdat
     }
   };
 
-  const handleUpdatePassword = (e: React.FormEvent) => {
+  const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setValidationErrors([]);
     
     if (!user) return;
 
-    if (accountForm.newPassword.length < 6) {
-      setError("New password must be at least 6 characters.");
+    // Validate Password Strength
+    const passwordValidation = ValidationService.validatePassword(accountForm.newPassword);
+    if (!passwordValidation.isValid) {
+      setValidationErrors(passwordValidation.errors);
       return;
     }
 
@@ -83,23 +90,29 @@ const Settings: React.FC<Props> = ({ profile, user, onProfileUpdate, onUserUpdat
       return;
     }
 
-    // Simulate password check (In real app, this goes to backend)
-    // Here we just check if current password field is not empty as a basic check
     if (!accountForm.currentPassword) {
       setError("Please enter your current password.");
       return;
     }
 
-    // Mock Update
-    const updatedUser = { 
-      ...user, 
-      passwordHash: `client_${accountForm.newPassword}` // Update mock hash
-    };
-    
-    onUserUpdate(updatedUser);
-    setSaved(true);
-    setAccountForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-    setTimeout(() => setSaved(false), 2000);
+    try {
+        // Verify current password via login check
+        const loginCheck = await dbService.loginUser(user.email, accountForm.currentPassword);
+        if (!loginCheck) {
+             setError("Current password is incorrect.");
+             return;
+        }
+
+        // Update to new password
+        await dbService.updateUserPassword(user.id, accountForm.newPassword);
+        
+        setSaved(true);
+        setAccountForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        setTimeout(() => setSaved(false), 2000);
+        
+    } catch (e: any) {
+        setError(e.message || "Failed to update password");
+    }
   };
 
   const handleCancelSubscription = async () => {
@@ -396,6 +409,19 @@ const Settings: React.FC<Props> = ({ profile, user, onProfileUpdate, onUserUpdat
                       />
                    </div>
                 </div>
+
+                {validationErrors.length > 0 && (
+                  <div className="bg-rose-50 dark:bg-rose-900/20 p-3 rounded-lg border border-rose-100 dark:border-rose-900/30">
+                    <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 text-sm font-bold mb-1">
+                      <AlertTriangle className="w-4 h-4" /> Password Requirements:
+                    </div>
+                    <ul className="list-disc list-inside text-xs text-rose-500 dark:text-rose-300 space-y-1">
+                      {validationErrors.map((err, i) => (
+                        <li key={i}>{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 {error && (
                   <div className="p-3 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 text-sm rounded-lg flex items-center gap-2">
