@@ -143,7 +143,9 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
     
     const existingPost = posts.find(p => {
        const d = new Date(p.date);
-       return d.getDate() === day && d.getMonth() === currentDate.getMonth();
+       return d.getDate() === day && 
+              d.getMonth() === currentDate.getMonth() &&
+              d.getFullYear() === currentDate.getFullYear();
     });
 
     if (existingPost) {
@@ -186,10 +188,13 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
            };
         } else {
            // New Post
+           // Use Local Date Formatting instead of UTC to prevent "jumps"
+           const localDate = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(idea.day).padStart(2, '0')}`;
+           
            return {
             id: Date.now().toString(),
             userId,
-            date: new Date(currentDate.getFullYear(), currentDate.getMonth(), idea.day).toISOString().split('T')[0],
+            date: localDate,
             topic: idea.topic,
             caption: result.caption,
             imagePrompt: result.imagePrompt,
@@ -256,22 +261,30 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
     setLoadingImage(false);
   };
 
-  const handleSavePost = async () => {
-    if (generatedContent) {
+  const handleSavePost = async (postToSave?: GeneratedPost) => {
+    const target = postToSave || generatedContent;
+    if (target) {
       try {
-        console.log('Saving post:', generatedContent.id);
-        await dbService.savePost(generatedContent);
+        console.log('Saving post:', target.id, target.status);
+        await dbService.savePost(target);
+        
+        // Update both the list and the active editor state
         setPosts(prev => {
-          const idx = prev.findIndex(p => p.id === generatedContent.id);
+          const idx = prev.findIndex(p => p.id === target.id);
           if (idx >= 0) {
             const newPosts = [...prev];
-            newPosts[idx] = generatedContent;
+            newPosts[idx] = target;
             return newPosts;
           }
-          return [...prev, generatedContent];
+          return [...prev, target];
         });
+
+        if (generatedContent && generatedContent.id === target.id) {
+          setGeneratedContent(target);
+        }
+
         console.log('Post saved successfully');
-        alert("Post Saved to Database!");
+        if (!postToSave) alert("Post Saved to Database!");
       } catch (error) {
         console.error('Error saving post:', error);
         alert("Failed to save post. Please try again.");
@@ -309,16 +322,19 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
     }
   };
 
-  const handlePostNow = (platform: 'tiktok' | 'facebook' | 'instagram') => {
+  const handlePostNow = async (platform: 'tiktok' | 'facebook' | 'instagram') => {
     if (!generatedContent) return;
     
-    // 1. Trigger Download
+    // 1. Force save to DB and State first so it exists in the calendar
+    await handleSavePost(generatedContent);
+
+    // 2. Trigger Download
     if (generatedContent.imageUrl) {
       const filename = `kawayan_${platform}_${generatedContent.date}_${Date.now()}.png`;
       downloadImage(generatedContent.imageUrl, filename);
     }
 
-    // 2. Send Message to Extension
+    // 3. Send Message to Extension
     window.postMessage({
       type: 'KAWAYAN_POST_REQUEST',
       data: {
@@ -340,39 +356,39 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
         const { postId, platform, link } = event.data.data;
         console.log("Received post success from extension:", postId, platform, link);
         
-        // Find the post in local state
-        const postIndex = posts.findIndex(p => p.id === postId);
-        if (postIndex !== -1) {
-          const updatedPost = { 
-            ...posts[postIndex], 
-            status: 'Published' as const,
-            publishedAt: new Date().toISOString(),
-            externalLink: link 
-          };
+        setPosts(currentPosts => {
+          const postIndex = currentPosts.findIndex(p => p.id === postId);
           
-          // Update State
-          const newPosts = [...posts];
-          newPosts[postIndex] = updatedPost;
-          setPosts(newPosts);
-          
-          if (generatedContent && generatedContent.id === postId) {
-            setGeneratedContent(updatedPost);
-          }
+          // If for some reason it's not in the list, we can't update it easily here 
+          // without the full object, but handlePostNow ensures it's there.
+          if (postIndex !== -1) {
+            const updatedPost = { 
+              ...currentPosts[postIndex], 
+              status: 'Published' as const,
+              publishedAt: new Date().toISOString(),
+              externalLink: link 
+            };
+            
+            // Update DB
+            dbService.savePost(updatedPost).catch(e => console.error("Failed to update post status in DB", e));
+            
+            // If this is the currently viewed post, update the editor too
+            if (generatedContent && generatedContent.id === postId) {
+              setGeneratedContent(updatedPost);
+            }
 
-          // Update DB
-          try {
-            await dbService.savePost(updatedPost);
-            console.log("Post status updated to Published in DB");
-          } catch (e) {
-            console.error("Failed to update post status in DB", e);
+            const newPosts = [...currentPosts];
+            newPosts[postIndex] = updatedPost;
+            return newPosts;
           }
-        }
+          return currentPosts;
+        });
       }
     };
 
     window.addEventListener('message', handleExtensionMessage);
     return () => window.removeEventListener('message', handleExtensionMessage);
-  }, [posts, generatedContent, dbService]);
+  }, [generatedContent, dbService]);
 
   // --- Calendar Grid Helpers ---
   const getDaysInMonth = (date: Date) => {
@@ -397,8 +413,11 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
     for (let day = 1; day <= totalDays; day++) {
       const idea = ideas.find(i => i.day === day);
       const post = posts.find(p => {
-         const d = new Date(p.date);
-         return d.getDate() === day && d.getMonth() === currentDate.getMonth();
+         // p.date is YYYY-MM-DD
+         const [y, m, d] = p.date.split('-').map(Number);
+         return d === day && 
+                (m - 1) === currentDate.getMonth() && 
+                y === currentDate.getFullYear();
       });
       const isSelected = selectedDay === day;
 
@@ -769,7 +788,7 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
               {/* Footer Actions */}
               <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex gap-3">
                  <button 
-                    onClick={handleSavePost}
+                    onClick={() => handleSavePost()}
                     disabled={!generatedContent}
                     className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition text-sm flex items-center justify-center gap-2"
                  >
@@ -784,8 +803,8 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
                    }`}
                    onClick={() => {
                      if(generatedContent) {
-                       setGeneratedContent({...generatedContent, status: 'Scheduled'});
-                       handleSavePost();
+                       const updated = {...generatedContent, status: 'Scheduled' as const};
+                       handleSavePost(updated);
                        alert("Post Scheduled Successfully! 🚀");
                      }
                    }}

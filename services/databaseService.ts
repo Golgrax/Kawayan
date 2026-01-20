@@ -250,7 +250,7 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
           UPDATE generated_posts 
           SET date = ?, topic = ?, caption = ?, image_prompt = ?, image_url = ?, 
               status = ?, virality_score = ?, virality_reason = ?, format = ?,
-              external_link = ?, published_at = ?
+              external_link = ?, published_at = ?, regen_count = ?, history = ?
           WHERE id = ?
         `).run(
           post.date,
@@ -264,13 +264,15 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
           post.format || null,
           post.externalLink || null,
           post.publishedAt || null,
+          post.regenCount || 0,
+          JSON.stringify(post.history || []),
           post.id
         );
       } else {
         // Insert new post
         db.prepare(`
-          INSERT INTO generated_posts (id, user_id, date, topic, caption, image_prompt, image_url, status, virality_score, virality_reason, format, external_link, published_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO generated_posts (id, user_id, date, topic, caption, image_prompt, image_url, status, virality_score, virality_reason, format, external_link, published_at, regen_count, history)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           post.id,
           post.userId,
@@ -284,7 +286,9 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
           post.viralityReason || null,
           post.format || null,
           post.externalLink || null,
-          post.publishedAt || null
+          post.publishedAt || null,
+          post.regenCount || 0,
+          JSON.stringify(post.history || [])
         );
       }
     } catch (error) {
@@ -312,8 +316,8 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
         format: row.format,
         externalLink: row.external_link,
         publishedAt: row.published_at,
-        regenCount: 0,
-        history: []
+        regenCount: row.regen_count || 0,
+        history: row.history ? JSON.parse(row.history) : []
       }));
     } catch (error) {
       console.error('Error getting user posts:', error);

@@ -65,6 +65,8 @@ export class DatabaseConfig {
         format TEXT,
         external_link TEXT,
         published_at DATETIME,
+        regen_count INTEGER DEFAULT 0,
+        history TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -75,13 +77,13 @@ export class DatabaseConfig {
     const tableInfo = this.db.prepare("PRAGMA table_info(generated_posts)").all() as any[];
     const hasExternalLink = tableInfo.some(col => col.name === 'external_link');
     const hasPublishedAt = tableInfo.some(col => col.name === 'published_at');
+    const hasRegenCount = tableInfo.some(col => col.name === 'regen_count');
+    const hasHistory = tableInfo.some(col => col.name === 'history');
 
-    if (!hasExternalLink) {
-      this.db.exec("ALTER TABLE generated_posts ADD COLUMN external_link TEXT");
-    }
-    if (!hasPublishedAt) {
-      this.db.exec("ALTER TABLE generated_posts ADD COLUMN published_at DATETIME");
-    }
+    if (!hasExternalLink) this.db.exec("ALTER TABLE generated_posts ADD COLUMN external_link TEXT");
+    if (!hasPublishedAt) this.db.exec("ALTER TABLE generated_posts ADD COLUMN published_at DATETIME");
+    if (!hasRegenCount) this.db.exec("ALTER TABLE generated_posts ADD COLUMN regen_count INTEGER DEFAULT 0");
+    if (!hasHistory) this.db.exec("ALTER TABLE generated_posts ADD COLUMN history TEXT");
     
     // Sessions table
     this.db.exec(`
