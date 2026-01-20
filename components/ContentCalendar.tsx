@@ -713,8 +713,17 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
                          )}
                          
                          <div className="mb-6 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
-                            <p className="font-bold mb-1 uppercase text-[10px]">Image Prompt Used:</p>
-                            <p className="italic opacity-70 mb-2">{generatedContent.imagePrompt}</p>
+                            <p className="font-bold mb-2 uppercase text-[10px] flex justify-between items-center">
+                               <span>Image Prompt Used:</span>
+                               <span className="text-[9px] font-normal opacity-50 italic">Editable</span>
+                            </p>
+                            <textarea 
+                               className="w-full bg-slate-50 dark:bg-slate-900 border-none rounded-lg p-2 text-xs italic opacity-80 focus:opacity-100 focus:ring-1 focus:ring-emerald-500 transition-all resize-none text-slate-600 dark:text-slate-300"
+                               rows={3}
+                               value={generatedContent.imagePrompt}
+                               onChange={(e) => setGeneratedContent({...generatedContent, imagePrompt: e.target.value})}
+                               placeholder="Describe the image you want..."
+                            />
                          </div>
                      </div>
 
