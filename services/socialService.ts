@@ -22,14 +22,60 @@ class SocialMediaService {
     return JSON.parse(localStorage.getItem(SocialMediaService.STORAGE_KEY) || '{}');
   }
 
-  private saveConnections(data: any) {
-    localStorage.setItem(SocialMediaService.STORAGE_KEY, JSON.stringify(data));
+  // Helper to check for Sandbox Mode
+  private isSandbox(): boolean {
+    const isDev = import.meta.env.DEV;
+    const tiktokKey = import.meta.env.VITE_TIKTOK_CLIENT_KEY || '';
+    const fbKey = import.meta.env.VITE_FACEBOOK_APP_ID || '';
+    
+    // Check if keys are missing or placeholders
+    const missingKeys = !tiktokKey || tiktokKey.includes('your_') || !fbKey || fbKey.includes('your_');
+    
+    console.log(`[SocialService] Check Sandbox: Dev=${isDev}, MissingKeys=${missingKeys} (TikTok: ${tiktokKey.slice(0,5)}..., FB: ${fbKey.slice(0,5)}...)`);
+    
+    return isDev || missingKeys;
   }
 
-  // 1. Connect Account (Redirects to real OAuth)
+  public sandboxMode = this.isSandbox();
+
+  private saveConnections(data: any) {
+    localStorage.setItem(SocialMediaService.STORAGE_KEY, JSON.stringify(data));
+    // Trigger a custom event so UI updates immediately
+    window.dispatchEvent(new Event('social-connections-updated'));
+  }
+
+  // 1. Connect Account (Redirects to real OAuth or Sandbox Mock)
   async connectAccount(platform: 'facebook' | 'instagram' | 'tiktok'): Promise<void> {
-    console.log(`Redirecting to ${platform} Auth...`);
+    const useSandbox = this.isSandbox();
+    console.log(`[SocialService] Connecting to ${platform}... Sandbox Mode: ${useSandbox}`);
     
+    // SANDBOX BYPASS
+    if (useSandbox) {
+      const confirmSandbox = confirm(
+        `[SANDBOX MODE]\n\nDo you want to simulate a successful ${platform} connection?\n\nClick OK to connect instantly (Mock).\nClick Cancel to try real OAuth.`
+      );
+
+      if (confirmSandbox) {
+        console.log(`[SocialService] Simulating ${platform} connection...`);
+        const connections = this.getConnections();
+        connections[platform] = {
+          connected: true,
+          connectedAt: new Date().toISOString(),
+          platformUser: {
+            name: `Sandbox ${platform.charAt(0).toUpperCase() + platform.slice(1)} User`,
+            id: `mock_${platform}_${Date.now()}`
+          }
+        };
+        this.saveConnections(connections);
+        
+        // Redirect to callback URL to trigger frontend listeners/routes if needed, 
+        // or just reload/notify. For this app, simply reloading or dispatching event is enough,
+        // but to match the flow, we'll reload the window to the billing/settings page.
+        window.location.reload();
+        return;
+      }
+    }
+
     const redirectUri = `${window.location.origin}/auth/callback/${platform}`;
     let authUrl = '';
 
@@ -39,20 +85,25 @@ class SocialMediaService {
         : (import.meta as any).env.VITE_INSTAGRAM_APP_ID;
       
       if (!appId) {
-        alert(`OAUTH SETUP REQUIRED: Please configure VITE_${platform.toUpperCase()}_APP_ID in .env`);
+        if (confirm("Missing App ID. Force Sandbox Connection?")) {
+           this.sandboxMode = true;
+           return this.connectAccount(platform);
+        }
         return;
       }
       authUrl = `https://www.facebook.com/v12.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=public_profile,email,pages_show_list,pages_read_engagement`;
     } else if (platform === 'tiktok') {
       const clientKey = (import.meta as any).env.VITE_TIKTOK_CLIENT_KEY;
       if (!clientKey) {
-        alert(`OAUTH SETUP REQUIRED: Please configure VITE_TIKTOK_CLIENT_KEY in .env`);
+        if (confirm("Missing TikTok Client Key. Force Sandbox Connection?")) {
+           this.sandboxMode = true;
+           return this.connectAccount(platform);
+        }
         return;
       }
       
       // Ensure redirectUri is clean and matches the dashboard exactly
       const cleanRedirectUri = `${window.location.origin}/auth/callback/tiktok`.replace(/\/$/, '');
-      const encodedRedirectUri = encodeURIComponent(cleanRedirectUri);
       
       console.info('TikTok Auth - Clean Redirect URI:', cleanRedirectUri);
       
@@ -60,7 +111,7 @@ class SocialMediaService {
       const params = new URLSearchParams({
         client_key: clientKey,
         scope: 'user.info.basic',
-        redirect_uri: cleanRedirectUri, // URLSearchParams handles encoding
+        redirect_uri: cleanRedirectUri, 
         state: Math.random().toString(36).substring(7),
         response_type: 'code'
       });

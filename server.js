@@ -21,6 +21,21 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// CSP Middleware to allow Social Plugins
+app.use((req, res, next) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://* *.tiktok.com *.facebook.com *.google.com *.googleapis.com *.googletagmanager.com; " +
+    "style-src 'self' 'unsafe-inline' https://* *.googleapis.com; " +
+    "img-src 'self' data: https://* *.facebook.com *.googleusercontent.com *.tiktokcdn.com; " +
+    "font-src 'self' data: https://* *.gstatic.com; " +
+    "connect-src 'self' https://* *.tiktokapis.com *.facebook.com *.google-analytics.com;" +
+    "frame-src 'self' https://* *.tiktok.com *.facebook.com;"
+  );
+  next();
+});
+
 // Serve static files from the React app
 app.use(express.static(path.join(__dirname, 'dist')));
 
