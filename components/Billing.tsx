@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, CheckCircle, Package, AlertTriangle, Plus, Loader2, Download, X, Smartphone, XCircle } from 'lucide-react';
+import { CreditCard, CheckCircle, Package, AlertTriangle, Plus, Loader2, Download, X, Smartphone, XCircle, RefreshCw } from 'lucide-react';
 import { paymentService, Wallet } from '../services/paymentService';
 
 const Billing: React.FC = () => {
@@ -20,9 +20,30 @@ const Billing: React.FC = () => {
 
   const loadWallet = async () => {
     setLoading(true);
+    
+    // Trigger verification check before loading data
+    try {
+      await paymentService.verifyPayment();
+    } catch (e) {
+      console.warn("Auto-verification failed:", e);
+    }
+
     const data = await paymentService.getWalletData();
     setWallet(data);
     setLoading(false);
+  };
+
+  const handleVerifyManual = async () => {
+    setProcessing(true);
+    try {
+      const result = await paymentService.verifyPayment();
+      alert(result.message);
+      await loadWallet();
+    } catch (error: any) {
+      alert(error.message);
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const handleTopUp = async () => {
@@ -256,14 +277,24 @@ const Billing: React.FC = () => {
                         {txn.status}
                       </span>
                       {txn.status === 'PENDING' && (
-                        <button 
-                          onClick={() => handleCancelTransaction(txn.id)}
-                          disabled={cancellingId === txn.id}
-                          className="text-xs text-rose-500 hover:text-rose-700 flex items-center gap-1 transition disabled:opacity-50"
-                          title="Cancel Transaction"
-                        >
-                           {cancellingId === txn.id ? <Loader2 className="w-3 h-3 animate-spin"/> : <XCircle className="w-4 h-4"/>}
-                        </button>
+                        <div className="flex gap-1">
+                          <button 
+                            onClick={handleVerifyManual}
+                            disabled={processing}
+                            className="text-xs text-emerald-500 hover:text-emerald-700 flex items-center gap-1 transition disabled:opacity-50"
+                            title="Verify Payment Status"
+                          >
+                             <RefreshCw className={`w-4 h-4 ${processing ? 'animate-spin' : ''}`}/>
+                          </button>
+                          <button 
+                            onClick={() => handleCancelTransaction(txn.id)}
+                            disabled={cancellingId === txn.id}
+                            className="text-xs text-rose-500 hover:text-rose-700 flex items-center gap-1 transition disabled:opacity-50"
+                            title="Cancel Transaction"
+                          >
+                             {cancellingId === txn.id ? <Loader2 className="w-3 h-3 animate-spin"/> : <XCircle className="w-4 h-4"/>}
+                          </button>
+                        </div>
                       )}
                     </div>
                   </td>

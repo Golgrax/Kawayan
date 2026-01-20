@@ -149,6 +149,22 @@ class PaymentService {
 
     return response.json();
   }
+
+  async verifyPayment(): Promise<{ status: string, message: string }> {
+    const userId = this.getUserId();
+    if (!userId) throw new Error("Not authenticated");
+
+    const response = await fetch('/api/wallet/verify-payment', {
+      method: 'POST',
+      headers: this.getAuthHeader()
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to verify payment status");
+    }
+
+    return response.json();
+  }
 }
 
 export const paymentService = new PaymentService();
