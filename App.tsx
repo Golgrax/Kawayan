@@ -25,11 +25,16 @@ const App: React.FC = () => {
     console.log('Initializing Kawayan AI App...');
 
     try {
+      // Check URL params first to see if we need to override the landing view
+      const urlParams = new URLSearchParams(window.location.search);
+      const isPaymentSuccess = urlParams.get('success') === 'true';
+
       // Check for existing session on load
       const currentUser = dbService.getCurrentUser();
       if (currentUser) {
         console.log('Found existing session for user:', currentUser.email);
-        handleLogin(currentUser);
+        // Pass ViewState.BILLING if we are coming from a successful payment
+        handleLogin(currentUser, isPaymentSuccess ? ViewState.BILLING : undefined);
       }
       
       // Check URL path or hash for admin back door
@@ -38,6 +43,11 @@ const App: React.FC = () => {
       
       if (hash === '#admin-portal' || path === '/admin-portal') {
         setView(ViewState.ADMIN_LOGIN);
+      }
+
+      if (isPaymentSuccess) {
+        console.log('Detected successful payment redirect');
+        setView(ViewState.BILLING);
       }
 
       // Default to Light Mode (Removed auto-detection)
@@ -57,7 +67,7 @@ const App: React.FC = () => {
     }
   }, [darkMode]);
 
-  const handleLogin = async (loggedInUser: User) => {
+  const handleLogin = async (loggedInUser: User, initialView?: ViewState) => {
     setUser(loggedInUser);
     
     // Set theme from user preference (DB Priority)
@@ -77,7 +87,8 @@ const App: React.FC = () => {
         const profile = await dbService.getProfile(loggedInUser.id);
         if (profile) {
           setBrandProfile(profile);
-          setView(ViewState.CALENDAR);
+          // Prioritize the requested initial view (e.g. BILLING after payment)
+          setView(initialView || ViewState.CALENDAR);
         } else {
           // No profile, go to survey
           setView(ViewState.SURVEY);
