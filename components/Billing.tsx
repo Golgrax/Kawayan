@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, CheckCircle, Package, AlertTriangle, Plus, Loader2, Download, X, Smartphone } from 'lucide-react';
+import { CreditCard, CheckCircle, Package, AlertTriangle, Plus, Loader2, Download, X, Smartphone, XCircle } from 'lucide-react';
 import { paymentService, Wallet } from '../services/paymentService';
 
 const Billing: React.FC = () => {
@@ -7,6 +7,7 @@ const Billing: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [topUpAmount, setTopUpAmount] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   
   // Modals
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -53,6 +54,19 @@ const Billing: React.FC = () => {
     a.href = url;
     a.download = `Kawayan_Invoices_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
+  };
+
+  const handleCancelTransaction = async (id: string) => {
+    if (!confirm("Are you sure you want to cancel this pending transaction?")) return;
+    setCancellingId(id);
+    try {
+      const updatedWallet = await paymentService.cancelTransaction(id);
+      setWallet(updatedWallet);
+    } catch (error: any) {
+      alert(error.message);
+    } finally {
+      setCancellingId(null);
+    }
   };
 
   const handleSavePaymentMethod = () => {
@@ -237,9 +251,21 @@ const Billing: React.FC = () => {
                   <td className="px-6 py-4 text-slate-600 dark:text-slate-300">{new Date(txn.date).toLocaleDateString()}</td>
                   <td className="px-6 py-4 font-medium text-slate-800 dark:text-white">{txn.description}</td>
                   <td className="px-6 py-4">
-                    <span className={`text-xs px-2 py-1 rounded-full font-bold ${txn.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
-                      {txn.status}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded-full font-bold ${txn.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' : txn.status === 'PENDING' ? 'bg-orange-100 text-orange-700' : 'bg-rose-100 text-rose-700'}`}>
+                        {txn.status}
+                      </span>
+                      {txn.status === 'PENDING' && (
+                        <button 
+                          onClick={() => handleCancelTransaction(txn.id)}
+                          disabled={cancellingId === txn.id}
+                          className="text-xs text-rose-500 hover:text-rose-700 flex items-center gap-1 transition disabled:opacity-50"
+                          title="Cancel Transaction"
+                        >
+                           {cancellingId === txn.id ? <Loader2 className="w-3 h-3 animate-spin"/> : <XCircle className="w-4 h-4"/>}
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className={`px-6 py-4 text-right font-bold ${txn.type === 'CREDIT' ? 'text-emerald-600' : 'text-rose-600'}`}>
                     {txn.type === 'CREDIT' ? '+' : '-'}₱{txn.amount.toFixed(2)}

@@ -17,6 +17,9 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 3001;
 
+// Trust proxy (required for Codespaces/Heroku/etc to get correct protocol/host)
+app.set('trust proxy', true);
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -290,8 +293,22 @@ app.get('/api/wallet/:userId', authenticateToken, async (req, res) => {
   }
 });
 
+app.post('/api/wallet/cancel-transaction', authenticateToken, async (req, res) => {
+  const { transactionId } = req.body;
+  const user = req.user;
+
+  try {
+    await dbService.cancelTransaction(transactionId, user.userId);
+    const wallet = await dbService.getWallet(user.userId);
+    res.json(wallet);
+  } catch (error) {
+    logger.error('Cancel transaction error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/wallet/create-invoice', authenticateToken, async (req, res) => {
-  const { userId, amount } = req.body;
+  const { userId, amount, clientOrigin } = req.body;
   const user = req.user;
 
   if (userId !== user.userId && user.role !== 'admin') {
@@ -302,6 +319,15 @@ app.post('/api/wallet/create-invoice', authenticateToken, async (req, res) => {
     const externalId = `invoice_${userId}_${Date.now()}`;
     const xenditSecret = process.env.XENDIT_SECRET_KEY;
     const authHeader = 'Basic ' + Buffer.from(xenditSecret + ':').toString('base64');
+
+    // Determine the base URL dynamically
+    // Priority: Client-provided Origin (Most reliable for SPAs) -> Headers -> Fallback
+    const origin = req.get('origin');
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.headers['x-forwarded-host'] || req.get('host');
+    const baseUrl = clientOrigin || origin || `${protocol}://${host}`;
+    
+    logger.info(`Creating Xendit Invoice. Base URL determined as: ${baseUrl}`);
 
     const response = await fetch('https://api.xendit.co/v2/invoices', {
       method: 'POST',
@@ -316,8 +342,8 @@ app.post('/api/wallet/create-invoice', authenticateToken, async (req, res) => {
         customer: {
           email: user.email
         },
-        success_redirect_url: `${req.protocol}://${req.get('host')}/billing?success=true`,
-        failure_redirect_url: `${req.protocol}://${req.get('host')}/billing?failed=true`
+        success_redirect_url: `${baseUrl}/billing?success=true`,
+        failure_redirect_url: `${baseUrl}/billing?failed=true`
       })
     });
 
@@ -783,19 +809,38 @@ function parseSocialNumber(str) {
 }
 
 // Route for stats
+
 app.get('/api/social/stats/:platform/:username', async (req, res) => {
+
   const { platform, username } = req.params;
+
   const data = await scrapeSocialStats(platform, username);
+
   res.json(data);
+
 });
+
+
+
+// API 404 Handler - Must be before the React catch-all
+
+
+
+app.use('/api', (req, res) => {
+
+
+
+  res.status(404).json({ error: 'API endpoint not found' });
+
+
+
+});
+
+
 
 // The "catchall" handler: for any request that doesn't
 
-
-
 // match one above, send back React's index.html file.
-
-
 
 app.use((req, res) => {
 

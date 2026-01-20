@@ -389,6 +389,18 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
   async getWallet(userId: string): Promise<any> {
     const db = this.dbConfig.getDatabase();
     try {
+      // Auto-expire old pending transactions
+      db.transaction(() => {
+        const pendingTxns = db.prepare("SELECT id, date FROM transactions WHERE user_id = ? AND status = 'PENDING'").all(userId) as any[];
+        for (const txn of pendingTxns) {
+          const txnDate = new Date(txn.date).getTime();
+          const hoursDiff = (Date.now() - txnDate) / (1000 * 60 * 60);
+          if (hoursDiff > 12) {
+            db.prepare("UPDATE transactions SET status = 'FAILED' WHERE id = ?").run(txn.id);
+          }
+        }
+      });
+
       let wallet = db.prepare('SELECT * FROM wallets WHERE user_id = ?').get(userId) as any;
       
       if (!wallet) {
@@ -424,6 +436,25 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     
     try {
       db.transaction(() => {
+        // Check for existing pending transactions
+        if (status === 'PENDING') {
+          const pendingTxn = db.prepare("SELECT id, date FROM transactions WHERE user_id = ? AND status = 'PENDING'").get(userId) as any;
+          
+          if (pendingTxn) {
+            const txnDate = new Date(pendingTxn.date).getTime();
+            const now = Date.now();
+            const hoursDiff = (now - txnDate) / (1000 * 60 * 60);
+            
+            if (hoursDiff > 12) {
+              // Expired, mark as FAILED
+              db.prepare("UPDATE transactions SET status = 'FAILED' WHERE id = ?").run(pendingTxn.id);
+            } else {
+              // Still valid, prevent new transaction
+              throw new Error("You have a pending transaction. Please complete or cancel it before starting a new one.");
+            }
+          }
+        }
+
         // Add transaction record
         db.prepare(`
           INSERT INTO transactions (id, user_id, description, amount, status, type)
@@ -445,14 +476,27 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     }
   }
 
+  async cancelTransaction(transactionId: string, userId: string): Promise<void> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      const result = db.prepare("UPDATE transactions SET status = 'FAILED' WHERE id = ? AND user_id = ? AND status = 'PENDING'").run(transactionId, userId);
+      if (result.changes === 0) {
+        throw new Error("Transaction not found or not pending");
+      }
+    } catch (error) {
+      console.error('Error cancelling transaction:', error);
+      throw error;
+    }
+  }
+
   async approveTransaction(transactionId: string): Promise<void> {
     const db = this.dbConfig.getDatabase();
     try {
       db.transaction(() => {
-        const txn = db.prepare('SELECT * FROM transactions WHERE id = ? AND status = "PENDING"').get(transactionId) as any;
+        const txn = db.prepare("SELECT * FROM transactions WHERE id = ? AND status = 'PENDING'").get(transactionId) as any;
         if (!txn) throw new Error("Pending transaction not found");
 
-        db.prepare('UPDATE transactions SET status = "COMPLETED" WHERE id = ?').run(transactionId);
+        db.prepare("UPDATE transactions SET status = 'COMPLETED' WHERE id = ?").run(transactionId);
         
         if (txn.type === 'CREDIT') {
           db.prepare('UPDATE wallets SET balance = balance + ? WHERE user_id = ?').run(txn.amount, txn.user_id);
@@ -716,9 +760,9 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
   }
   
   // Transaction helper
-  async transaction<T>(fn: () => Promise<T>): Promise<T> {
-    return this.dbConfig.transaction(async () => {
-      return await fn();
+  transaction<T>(fn: () => T): T {
+    return this.dbConfig.transaction(() => {
+      return fn();
     });
   }
   
