@@ -241,7 +241,7 @@ const App: React.FC = () => {
 
       {/* Main Content */}
       <main className={`flex-grow ${view === ViewState.LOGIN || view === ViewState.SIGNUP || view === ViewState.ADMIN_LOGIN ? 'flex items-center justify-center' : ''}`}>
-        <div className={`w-full ${view === ViewState.CALENDAR || view === ViewState.ADMIN_DASHBOARD || view === ViewState.SETTINGS ? 'max-w-[1600px] mx-auto py-6 px-4 sm:px-6 lg:px-8' : 'w-full'}`}>
+        <div className={`w-full ${view === ViewState.LANDING ? '' : (view === ViewState.CALENDAR || view === ViewState.ADMIN_DASHBOARD || view === ViewState.SETTINGS ? 'max-w-[1600px] mx-auto py-6 px-4 sm:px-6 lg:px-8' : 'w-full')}`}>
           <Routes>
             <Route path="*" element={
               (() => {
@@ -267,7 +267,7 @@ const App: React.FC = () => {
                   case ViewState.SUPPORT_DASHBOARD:
                     return <SupportDashboard />;
                   case ViewState.ADMIN_DASHBOARD:
-                    return (user && user.role === 'admin') ? <AdminDashboard /> : <div className="text-center p-10">Access Denied</div>;
+                    return (user && user.role === 'admin') ? <AdminDashboard darkMode={darkMode} toggleTheme={() => updateTheme(!darkMode)} /> : <div className="text-center p-10">Access Denied</div>;
                   default:
                     return <LandingPage onNavigate={setView} />;
                 }

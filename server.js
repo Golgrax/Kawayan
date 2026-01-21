@@ -194,15 +194,22 @@ app.put('/api/auth/theme', authenticateToken, async (req, res) => {
   const { userId, theme } = req.body;
   const user = req.user;
 
+  console.log(`--- THEME UPDATE ATTEMPT ---`);
+  console.log(`Target User ID: ${userId}`);
+  console.log(`New Theme: ${theme}`);
+  console.log(`Requesting User: ${user.email} (${user.userId}, Role: ${user.role})`);
+
   if (userId !== user.userId && user.role !== 'admin') {
+    console.warn(`Unauthorized theme update attempt: ${user.email} tried to update ${userId}`);
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
   try {
     await dbService.updateUserTheme(userId, theme);
+    console.log(`Theme updated in DB for ${userId} to ${theme}`);
     res.json({ message: 'Theme updated successfully' });
   } catch (error) {
-    logger.error('Update theme error', { error: error.message });
+    console.error(`Theme update failed for ${userId}:`, error.message);
     res.status(500).json({ error: 'Failed to update theme' });
   }
 });
