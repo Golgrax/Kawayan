@@ -9,7 +9,6 @@ interface Props {
 const LandingPage: React.FC<Props> = ({ onNavigate }) => {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [videoLoaded, setVideoLoaded] = useState(false);
-  const [isLocked, setIsLocked] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -23,7 +22,6 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
   const indicatorRef = useRef<HTMLDivElement>(null);
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const requestRef = useRef<number>(0);
-  const lastUpdateRef = useRef<number>(0);
 
   // --- Optimized Liquid Scroll & Scrub Logic ---
   useEffect(() => {
@@ -37,29 +35,9 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
       }
     };
 
-    const handleWheel = (e: WheelEvent) => {
-      if (isAutoPlaying) return;
-      e.preventDefault();
-      // Even lower multiplier for more controlled, 'weighty' manual scrolling
-      targetScrollY.current += e.deltaY * 0.35; 
-      targetScrollY.current = Math.max(0, Math.min(targetScrollY.current, document.body.scrollHeight - window.innerHeight));
-      window.scrollTo({ top: targetScrollY.current, behavior: 'auto' });
-    };
-
     const smoothUpdate = (time: number) => {
-      // 1. Auto-Play Logic
-      if (isAutoPlaying) {
-        const containerTop = container.offsetTop;
-        const containerEnd = containerTop + container.scrollHeight - window.innerHeight;
-        targetScrollY.current += 1.6; 
-        if (targetScrollY.current >= containerEnd) {
-          setIsAutoPlaying(false);
-        }
-        window.scrollTo(0, targetScrollY.current);
-      }
-
-      // 2. Smooth Scroll Math (Higher Easing = Lower Factor)
-      const scrollEasing = 0.025; // Much weightier feel
+      // 1. Liquid-Smooth Scroll (Moderate Damping)
+      const scrollEasing = 0.1; 
       currentScrollY.current += (targetScrollY.current - currentScrollY.current) * scrollEasing;
       
       const rect = container.getBoundingClientRect();
@@ -68,10 +46,8 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
       const offset = currentScrollY.current - containerTop;
       const progress = Math.min(1, Math.max(0, offset / scrollHeight));
 
-      setIsLocked(currentScrollY.current < containerTop + scrollHeight && currentScrollY.current >= containerTop);
-
-      // 3. Performance Hack: Direct DOM Manipulation (No React Re-renders)
-      const opacity = Math.max(0, 1 - (progress * 3.5));
+      // 2. Performance Hack: Direct DOM Manipulation
+      const opacity = Math.max(0, 1 - (progress * 1.2)); 
       const scale = 1 - (progress * 0.05);
       
       if (contentRef.current) {
@@ -85,25 +61,21 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
       }
 
       if (indicatorRef.current) {
-        indicatorRef.current.style.opacity = opacity.toString();
+        indicatorRef.current.style.opacity = (1 - (progress * 4)).toString();
       }
 
-      // 4. Optimized Video Scrubbing (More 'catch-up' damping)
+      // 3. Liquid Video Tracking
       if (video.duration) {
         targetTimeRef.current = video.duration * progress;
       }
 
-      const videoEasing = 0.045; // Slower, smoother video transition
+      const videoEasing = 0.08; 
       currentTimeRef.current += (targetTimeRef.current - currentTimeRef.current) * videoEasing;
 
       if (video && !isNaN(video.duration)) {
-        // High-precision check but low-frequency update to help the decoder
-        const timeSinceLastUpdate = time - lastUpdateRef.current;
         const diff = Math.abs(video.currentTime - currentTimeRef.current);
-
-        if (!video.seeking && diff > 0.008 && timeSinceLastUpdate > 16) {
+        if (!video.seeking && diff > 0.002) {
           video.currentTime = currentTimeRef.current;
-          lastUpdateRef.current = time;
         }
       }
 
@@ -111,12 +83,10 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
-    window.addEventListener('wheel', handleWheel, { passive: false });
     requestRef.current = requestAnimationFrame(smoothUpdate);
 
     return () => {
       window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('wheel', handleWheel);
       cancelAnimationFrame(requestRef.current);
     };
   }, [videoLoaded, isAutoPlaying, mousePos.x, mousePos.y]);
@@ -151,9 +121,9 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
     >
       
       {/* Hero Section with Scroll Scrubbing Video */}
-      <div ref={containerRef} className="relative h-[800vh] bg-slate-900">
+      <div ref={containerRef} className="relative bg-slate-900 z-0">
         <section 
-          className={`${isLocked ? 'fixed inset-0' : (currentScrollY.current >= (containerRef.current?.offsetTop || 0) + (containerRef.current?.scrollHeight || 0) - window.innerHeight ? 'absolute bottom-0 left-0' : 'absolute top-0 left-0')} h-screen w-full flex items-center overflow-hidden z-10 transform-gpu`}
+          className="sticky top-0 h-screen w-full flex items-center overflow-hidden z-10 transform-gpu"
           style={{ willChange: 'transform' }}
         >
           
