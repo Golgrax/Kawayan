@@ -173,7 +173,21 @@ app.post('/api/auth/logout', async (req, res) => {
 
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   const user = req.user;
-  res.json(user);
+  try {
+    const db = dbService['dbConfig'].getDatabase();
+    const row = db.prepare('SELECT id, email, role, business_name, theme FROM users WHERE id = ?').get(user.userId);
+    if (!row) return res.status(404).json({ error: 'User not found' });
+    
+    res.json({
+      id: row.id,
+      email: row.email,
+      role: row.role,
+      businessName: row.business_name,
+      theme: row.theme
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch user data' });
+  }
 });
 
 app.put('/api/auth/theme', authenticateToken, async (req, res) => {

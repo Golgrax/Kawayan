@@ -24,38 +24,40 @@ const App: React.FC = () => {
   useEffect(() => {
     console.log('Initializing Kawayan AI App...');
 
-    try {
-      // Check URL params first to see if we need to override the landing view
-      const urlParams = new URLSearchParams(window.location.search);
-      const isPaymentSuccess = urlParams.get('success') === 'true';
+    const initApp = async () => {
+      try {
+        // Check URL params first to see if we need to override the landing view
+        const urlParams = new URLSearchParams(window.location.search);
+        const isPaymentSuccess = urlParams.get('success') === 'true';
 
-      // Check for existing session on load
-      const currentUser = dbService.getCurrentUser();
-      if (currentUser) {
-        console.log('Found existing session for user:', currentUser.email);
-        // Pass ViewState.BILLING if we are coming from a successful payment
-        handleLogin(currentUser, isPaymentSuccess ? ViewState.BILLING : undefined);
-      }
-      
-      // Check URL path or hash for admin back door
-      const path = window.location.pathname;
-      const hash = window.location.hash;
-      
-      if (hash === '#admin-portal' || path === '/admin-portal') {
-        setView(ViewState.ADMIN_LOGIN);
-      }
+        // Check for existing session on load (Async priority for fresh DB data)
+        const currentUser = await dbService.getCurrentUserAsync();
+        if (currentUser) {
+          console.log('Found existing session for user:', currentUser.email);
+          // Pass ViewState.BILLING if we are coming from a successful payment
+          handleLogin(currentUser, isPaymentSuccess ? ViewState.BILLING : undefined);
+        }
+        
+        // Check URL path or hash for admin back door
+        const path = window.location.pathname;
+        const hash = window.location.hash;
+        
+        if (hash === '#admin-portal' || path === '/admin-portal') {
+          setView(ViewState.ADMIN_LOGIN);
+        }
 
-      if (isPaymentSuccess) {
-        console.log('Detected successful payment redirect');
-        setView(ViewState.BILLING);
+        if (isPaymentSuccess) {
+          console.log('Detected successful payment redirect');
+          setView(ViewState.BILLING);
+        }
+      } catch (error) {
+        console.error('Error initializing app:', error);
       }
+    };
 
-      // Default to Light Mode (Removed auto-detection)
-      setDarkMode(false);
-      
-    } catch (error) {
-      console.error('Error initializing app:', error);
-    }
+    initApp();
+    // Default to Light Mode (Removed auto-detection)
+    setDarkMode(false);
   }, []);
 
   // Update HTML class for dark mode
