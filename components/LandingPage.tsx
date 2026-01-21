@@ -18,8 +18,10 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
   const currentScrollY = useRef(0);
   const targetTimeRef = useRef(0);
   const currentTimeRef = useRef(0);
-  const [contentOpacity, setContentOpacity] = useState(1);
-  const [contentScale, setContentScale] = useState(1);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const indicatorRef = useRef<HTMLDivElement>(null);
+  const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const requestRef = useRef<number>(0);
   const lastUpdateRef = useRef<number>(0);
 
@@ -30,15 +32,36 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
     if (!video || !container) return;
 
     const handleScroll = () => {
-      targetScrollY.current = window.scrollY;
+      if (!isAutoPlaying) {
+        targetScrollY.current = window.scrollY;
+      }
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      if (isAutoPlaying) return;
+      e.preventDefault();
+      // Even lower multiplier for more controlled, 'weighty' manual scrolling
+      targetScrollY.current += e.deltaY * 0.35; 
+      targetScrollY.current = Math.max(0, Math.min(targetScrollY.current, document.body.scrollHeight - window.innerHeight));
+      window.scrollTo({ top: targetScrollY.current, behavior: 'auto' });
     };
 
     const smoothUpdate = (time: number) => {
-      // 1. Smooth the Page Scroll (Ultra-Smooth 'Weighty' Feel)
-      const scrollEasing = 0.05; // Lower = more 'liquid' and weighty
+      // 1. Auto-Play Logic
+      if (isAutoPlaying) {
+        const containerTop = container.offsetTop;
+        const containerEnd = containerTop + container.scrollHeight - window.innerHeight;
+        targetScrollY.current += 1.6; 
+        if (targetScrollY.current >= containerEnd) {
+          setIsAutoPlaying(false);
+        }
+        window.scrollTo(0, targetScrollY.current);
+      }
+
+      // 2. Smooth Scroll Math (Higher Easing = Lower Factor)
+      const scrollEasing = 0.025; // Much weightier feel
       currentScrollY.current += (targetScrollY.current - currentScrollY.current) * scrollEasing;
       
-      // Calculate progress based on smoothed scroll
       const rect = container.getBoundingClientRect();
       const containerTop = currentScrollY.current + rect.top;
       const scrollHeight = container.scrollHeight - window.innerHeight;
@@ -47,27 +70,38 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
 
       setIsLocked(currentScrollY.current < containerTop + scrollHeight && currentScrollY.current >= containerTop);
 
-      // 2. Cinematic Fades and Scales
-      // Content starts fading out after 10% scroll and is gone by 40%
-      const opacity = Math.max(0, 1 - (progress * 3));
-      const scale = 1 - (progress * 0.1); // Subtle zoom out effect
-      setContentOpacity(opacity);
-      setContentScale(scale);
+      // 3. Performance Hack: Direct DOM Manipulation (No React Re-renders)
+      const opacity = Math.max(0, 1 - (progress * 3.5));
+      const scale = 1 - (progress * 0.05);
+      
+      if (contentRef.current) {
+        contentRef.current.style.opacity = opacity.toString();
+        contentRef.current.style.transform = `translate3d(${mousePos.x * -15}px, ${mousePos.y * -15}px, 0) scale(${scale})`;
+        contentRef.current.style.pointerEvents = opacity < 0.1 ? 'none' : 'auto';
+      }
+      
+      if (overlayRef.current) {
+        overlayRef.current.style.opacity = (0.4 + (1 - opacity) * 0.6).toString();
+      }
 
-      // 3. Smooth the Video Scrubbing
+      if (indicatorRef.current) {
+        indicatorRef.current.style.opacity = opacity.toString();
+      }
+
+      // 4. Optimized Video Scrubbing (More 'catch-up' damping)
       if (video.duration) {
         targetTimeRef.current = video.duration * progress;
       }
 
-      const videoEasing = 0.1;
-      const delta = (targetTimeRef.current - currentTimeRef.current) * videoEasing;
-      currentTimeRef.current += delta;
+      const videoEasing = 0.045; // Slower, smoother video transition
+      currentTimeRef.current += (targetTimeRef.current - currentTimeRef.current) * videoEasing;
 
       if (video && !isNaN(video.duration)) {
+        // High-precision check but low-frequency update to help the decoder
         const timeSinceLastUpdate = time - lastUpdateRef.current;
-        const isSignificantChange = Math.abs(video.currentTime - currentTimeRef.current) > 0.01;
+        const diff = Math.abs(video.currentTime - currentTimeRef.current);
 
-        if (!video.seeking && timeSinceLastUpdate > 16 && isSignificantChange) {
+        if (!video.seeking && diff > 0.008 && timeSinceLastUpdate > 16) {
           video.currentTime = currentTimeRef.current;
           lastUpdateRef.current = time;
         }
@@ -77,13 +111,26 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('wheel', handleWheel, { passive: false });
     requestRef.current = requestAnimationFrame(smoothUpdate);
 
     return () => {
       window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('wheel', handleWheel);
       cancelAnimationFrame(requestRef.current);
     };
-  }, [videoLoaded]);
+  }, [videoLoaded, isAutoPlaying, mousePos.x, mousePos.y]);
+
+  const toggleAutoPlay = () => {
+    if (!isAutoPlaying) {
+      const start = containerRef.current?.offsetTop || 0;
+      targetScrollY.current = start;
+      window.scrollTo({ top: start, behavior: 'smooth' });
+      setTimeout(() => setIsAutoPlaying(true), 600);
+    } else {
+      setIsAutoPlaying(false);
+    }
+  };
 
   // --- Parallax Logic ---
   const handleParallaxMove = (e: React.MouseEvent) => {
@@ -104,7 +151,7 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
     >
       
       {/* Hero Section with Scroll Scrubbing Video */}
-      <div ref={containerRef} className="relative h-[600vh] bg-slate-900">
+      <div ref={containerRef} className="relative h-[800vh] bg-slate-900">
         <section 
           className={`${isLocked ? 'fixed inset-0' : (currentScrollY.current >= (containerRef.current?.offsetTop || 0) + (containerRef.current?.scrollHeight || 0) - window.innerHeight ? 'absolute bottom-0 left-0' : 'absolute top-0 left-0')} h-screen w-full flex items-center overflow-hidden z-10 transform-gpu`}
           style={{ willChange: 'transform' }}
@@ -131,8 +178,8 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
 
           {/* Overlay Darkening with Progressive Fade */}
           <div 
+            ref={overlayRef}
             className="absolute inset-0 bg-slate-900/40 dark:bg-black/60 -z-10 transition-opacity duration-700"
-            style={{ opacity: 0.4 + (1 - contentOpacity) * 0.6 }}
           ></div>
 
           {/* Bottom Fade Transition */}
@@ -140,10 +187,10 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
 
           {/* Scroll Indicator */}
           <div 
+            ref={indicatorRef}
             className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 text-white/50 animate-bounce transition-opacity duration-500"
-            style={{ opacity: contentOpacity }}
           >
-            <span className="text-[10px] font-black uppercase tracking-[0.2em]">Scroll to Advance</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em]">{isAutoPlaying ? 'Cinematic Mode Active' : 'Scroll to Advance'}</span>
             <div className="w-px h-8 bg-gradient-to-b from-emerald-500 to-transparent"></div>
           </div>
 
@@ -152,12 +199,8 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
               
               {/* Left Column: Text */}
               <div 
+                ref={contentRef}
                 className="text-center lg:text-left transition-transform duration-100 ease-out z-20"
-                style={{ 
-                  transform: `translate3d(${mousePos.x * -15}px, ${mousePos.y * -15}px, 0) scale(${contentScale})`,
-                  opacity: contentOpacity,
-                  pointerEvents: contentOpacity < 0.1 ? 'none' : 'auto'
-                }}
               >
                 <h1 
                   className="text-6xl sm:text-7xl lg:text-8xl font-black text-white tracking-tight mb-8 leading-[0.95]"
@@ -187,10 +230,14 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
                   </button>
                   
                   <button 
-                    onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
-                    className="px-8 py-4 bg-white/10 backdrop-blur-md border border-white/30 text-white rounded-2xl font-bold text-lg hover:bg-white/20 transition flex items-center justify-center gap-2 w-full sm:w-auto"
+                    onClick={toggleAutoPlay}
+                    className={`px-8 py-4 backdrop-blur-md border border-white/30 text-white rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-2 w-full sm:w-auto ${isAutoPlaying ? 'bg-emerald-500 border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.5)]' : 'bg-white/10 hover:bg-white/20'}`}
                   >
-                    <Play className="w-5 h-5 fill-current" /> Watch Demo
+                    {isAutoPlaying ? (
+                      <>Stop Cinematic</>
+                    ) : (
+                      <><Play className="w-5 h-5 fill-current" /> Cinematic Mode</>
+                    )}
                   </button>
                 </div>
               </div>
