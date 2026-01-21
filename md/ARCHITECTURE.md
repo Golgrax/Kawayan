@@ -1,5 +1,7 @@
 # Project Architecture
 
+[**⬅ Back: System Manual**](./SYSTEM_MANUAL.md) | [**Next: Database Schema ➔**](./DATABASE_SCHEMA.md)
+
 ## Overview
 Kawayan AI is built as a hybrid application that bridges modern AI capabilities with local data persistence for Philippine SMEs.
 

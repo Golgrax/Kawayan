@@ -1,6 +1,8 @@
 # Kawayan AI - User Guide
 
-Welcome to Kawayan AI, the content management and automation platform designed specifically for Philippine SMEs.
+[**Next: System Manual ➔**](./SYSTEM_MANUAL.md)
+
+Welcome to Kawayan AI, the content management and automation platform designed specifically for Filipino Small and Medium Enterprises (SMEs).
 
 ## 1. Getting Started
 1.  **Login**: Use your credentials provided during registration.

@@ -1,5 +1,7 @@
 # Kawayan AI - Database Schema
 
+[**⬅ Back: Architecture**](./ARCHITECTURE.md) | [**Next: Developer Guide ➔**](./DEVELOPER_GUIDE.md)
+
 This document outlines the data structures (entities) used in the application's local database service. These entities represent the "Tables" in our architecture.
 
 ## 1. User

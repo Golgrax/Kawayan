@@ -1,5 +1,7 @@
 # Developer Guide
 
+[**⬅ Back: Database Schema**](./DATABASE_SCHEMA.md) | [**Next: API Guide ➔**](./API_GUIDE.md)
+
 ## Setup
 1.  **Clone the repository**.
 2.  **Install dependencies**: `npm install`.

@@ -1,5 +1,7 @@
 # System Manual (Technical Operations)
 
+[**⬅ Back: User Guide**](./USER_GUIDE.md) | [**Next: Architecture ➔**](./ARCHITECTURE.md)
+
 ## 1. System Initialization
 The system initializes its schema automatically on startup via `config/database.ts`. If you need to wipe and reset, use `npm run seed.sh` (this will delete `kawayan.db`).
 
