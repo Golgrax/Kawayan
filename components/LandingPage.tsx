@@ -41,10 +41,8 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
       currentScrollY.current += (targetScrollY.current - currentScrollY.current) * scrollEasing;
       
       const rect = container.getBoundingClientRect();
-      const containerTop = currentScrollY.current + rect.top;
-      const scrollHeight = container.scrollHeight - window.innerHeight;
-      const offset = currentScrollY.current - containerTop;
-      const progress = Math.min(1, Math.max(0, offset / scrollHeight));
+      const scrollRange = window.innerHeight * 2; // Mimic the previous scroll depth for scrubbing
+      const progress = Math.min(1, Math.max(0, -rect.top / scrollRange));
 
       // 2. Performance Hack: Direct DOM Manipulation
       const opacity = Math.max(0, 1 - (progress * 1.2)); 
