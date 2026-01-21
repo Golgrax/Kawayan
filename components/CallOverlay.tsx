@@ -21,11 +21,13 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
   const [chatInput, setChatInput] = useState('');
   const [showChat, setShowChat] = useState(true);
   
+  // Track counts to force re-renders on WebRTC changes
+  const [remoteVideoTrackCount, setRemoteVideoTrackCount] = useState(0);
+
   const socketRef = useRef<Socket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteSocketIdRef = useRef<string | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -44,6 +46,7 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
     }
   }, [messages, showChat]);
 
+  // Sync Video Elements
   useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
@@ -54,7 +57,7 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
     if (remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
     }
-  }, [remoteStream]);
+  }, [remoteStream, remoteVideoTrackCount]);
 
   useEffect(() => {
     const session = JSON.parse(localStorage.getItem('kawayan_session') || '{}');
@@ -65,7 +68,6 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
 
     const startCall = async () => {
       try {
-        // Start with audio only to keep cam off
         const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: { echoCancellation: true, noiseSuppression: true },
           video: false 
@@ -89,15 +91,17 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
           setMessages(prev => [...prev, msg]);
         });
 
+        socket.on('peer-left', () => {
+          onEndCall();
+        });
+
         socket.on('user-connected', async (userId) => {
-          remoteSocketIdRef.current = userId;
-          createPeerConnection(userId, stream, true);
+          createPeerConnection(userId, stream);
         });
 
         socket.on('signal', async (data) => {
-          remoteSocketIdRef.current = data.from;
           if (!pcRef.current) {
-            createPeerConnection(data.from, stream, false);
+            createPeerConnection(data.from, stream);
           }
           
           const pc = pcRef.current!;
@@ -139,7 +143,7 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
     const token = localStorage.getItem('kawayan_jwt');
     const authHeaders = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
 
-    await fetch('/api/support/calls/unregister', {
+    fetch('/api/support/calls/unregister', {
       method: 'POST',
       headers: authHeaders,
       body: JSON.stringify({ agentId: isAgent ? session.id : null })
@@ -147,7 +151,7 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
 
     const idToResolve = isAgent ? targetUserId : session.id;
     if (idToResolve) {
-        await fetch('/api/support/tickets/resolve-user', {
+        fetch('/api/support/tickets/resolve-user', {
             method: 'POST',
             headers: authHeaders,
             body: JSON.stringify({ userId: idToResolve })
@@ -155,7 +159,7 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
     }
   };
 
-  const createPeerConnection = (targetId: string, stream: MediaStream, isInitiator: boolean) => {
+  const createPeerConnection = (targetId: string, stream: MediaStream) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
     pcRef.current = pc;
 
@@ -169,7 +173,12 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
 
     pc.ontrack = (event) => {
       setRemoteStream(event.streams[0]);
+      setRemoteVideoTrackCount(event.streams[0].getVideoTracks().length);
       setStatus('connected');
+      
+      // Listen for track removals/additions on this stream
+      event.streams[0].onaddtrack = () => setRemoteVideoTrackCount(prev => prev + 1);
+      event.streams[0].onremovetrack = () => setRemoteVideoTrackCount(prev => Math.max(0, prev - 1));
     };
 
     pc.onnegotiationneeded = async () => {
@@ -205,15 +214,16 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
     if (isVideoOff) {
       try {
         const videoStream = await navigator.mediaDevices.getUserMedia({ 
-          video: { width: 640, height: 480, frameRate: 15 } 
+          video: { width: 1280, height: 720, frameRate: 30 } // Better quality for "it works" feel
         });
         const videoTrack = videoStream.getVideoTracks()[0];
+        
+        // Add track locally
         localStream.addTrack(videoTrack);
         
-        // Add to PC
+        // Add to WebRTC
         pcRef.current.addTrack(videoTrack, localStream);
         setIsVideoOff(false);
-        // pc.onnegotiationneeded will fire automatically
       } catch (err) { alert("Could not start camera."); }
     } else {
       const videoTrack = localStream.getVideoTracks()[0];
@@ -221,12 +231,10 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
         videoTrack.stop();
         localStream.removeTrack(videoTrack);
         
-        // Find and remove from PC
         const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video');
         if (sender) pcRef.current.removeTrack(sender);
         
         setIsVideoOff(true);
-        // pc.onnegotiationneeded will fire automatically
       }
     }
   };
@@ -239,10 +247,13 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
         screenStreamRef.current = screenStream;
         const videoTrack = screenStream.getVideoTracks()[0];
         
-        // Add or Replace
+        // Replace current video track or add new
         const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video');
-        if (sender) sender.replaceTrack(videoTrack);
-        else pcRef.current.addTrack(videoTrack, screenStream);
+        if (sender) {
+          sender.replaceTrack(videoTrack);
+        } else {
+          pcRef.current.addTrack(videoTrack, screenStream);
+        }
         
         videoTrack.onended = () => stopScreenShare();
         setIsScreenSharing(true);
@@ -281,7 +292,8 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
     setChatInput('');
   };
 
-  const isRemoteVideoActive = remoteStream && remoteStream.getVideoTracks().length > 0;
+  // Improved visibility check
+  const isRemoteVideoActive = remoteVideoTrackCount > 0;
   const anyoneSharing = isRemoteVideoActive || !isVideoOff || isScreenSharing;
 
   return (
@@ -290,7 +302,8 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
         
         <div className="flex-1 flex overflow-hidden">
            
-           <div className={`${anyoneSharing ? 'flex-1' : 'w-0'} transition-all duration-500 relative bg-slate-900 flex items-center justify-center border-r border-slate-800/50 overflow-hidden`}>
+           {/* Main Video/Content Area */}
+           <div className={`${anyoneSharing ? 'flex-[2]' : 'w-0'} transition-all duration-500 relative bg-slate-900 flex items-center justify-center border-r border-slate-800/50 overflow-hidden`}>
               <video 
                 ref={remoteVideoRef} 
                 autoPlay 
@@ -298,8 +311,8 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
                 className={`w-full h-full object-contain ${!isRemoteVideoActive ? 'hidden' : 'block'}`} 
               />
 
-              {(!isRemoteVideoActive || status !== 'connected') && status === 'connecting' && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-12 bg-slate-900">
+              {status === 'connecting' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-12 bg-slate-900 z-10">
                    <div className="w-24 h-24 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 mx-auto border border-emerald-500/20">
                       <Loader2 className="w-10 h-10 animate-spin text-emerald-500" />
                    </div>
@@ -308,20 +321,22 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
                 </div>
               )}
 
-              <div className={`absolute bottom-8 right-8 transition-all duration-500 ${isVideoOff && !isScreenSharing ? 'w-0 h-0 opacity-0' : 'w-56 h-40 border-emerald-500/50 opacity-100'} bg-black rounded-3xl overflow-hidden border-2 border-slate-700 shadow-2xl z-30`}>
+              {/* Local Mini-Preview - Only visible if sharing */}
+              <div className={`absolute bottom-8 right-8 transition-all duration-500 ${isVideoOff && !isScreenSharing ? 'w-0 h-0 opacity-0' : 'w-64 h-40 border-emerald-500/50 opacity-100'} bg-black rounded-3xl overflow-hidden border-2 border-slate-700 shadow-2xl z-30`}>
                  <video ref={localVideoRef} autoPlay muted playsInline className={`w-full h-full object-cover scale-x-[-1]`} />
                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/60 px-2 py-0.5 rounded text-[8px] text-white font-black uppercase tracking-tighter border border-white/10">You</div>
               </div>
            </div>
 
+           {/* Chat / Info Area - Main focus when no video */}
            <div className={`flex-1 bg-slate-950 flex flex-col border-l border-slate-800 shadow-2xl transition-all duration-500`}>
               {!anyoneSharing && (
-                <div className="p-8 pb-0 animate-in fade-in duration-1000 text-center">
+                <div className="p-8 pb-4 animate-in fade-in duration-1000 text-center">
                    <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-emerald-500 shadow-lg">
                       <User className="w-10 h-10 text-slate-400" />
                    </div>
                    <h3 className="text-lg font-bold text-white uppercase tracking-widest">{isAgent ? 'User' : 'Support Agent'} Connected</h3>
-                   <p className="text-xs text-emerald-500 font-black uppercase mt-1">Audio Only Mode</p>
+                   <p className="text-xs text-emerald-500 font-black uppercase mt-1">Audio Only Session</p>
                 </div>
               )}
 
@@ -330,7 +345,7 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
                     <h4 className="text-xs font-black text-emerald-500 uppercase tracking-[0.2em] flex items-center gap-2">
                        <MessageSquare className="w-4 h-4"/> Live Support Chat
                     </h4>
-                    <p className="text-[10px] text-slate-500 mt-1 uppercase font-bold">Encrypted P2P Session</p>
+                    <p className="text-[10px] text-slate-500 mt-1 uppercase font-bold">Encrypted P2P Bridge</p>
                  </div>
                  {anyoneSharing && <button onClick={() => setShowChat(!showChat)} className="p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white transition"><X className="w-4 h-4"/></button>}
               </div>
@@ -351,12 +366,12 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
                  {messages.length === 0 && (
                    <div className="h-full flex flex-col items-center justify-center text-center opacity-10">
                       <MessageSquare className="w-16 h-16 mb-4"/>
-                      <p className="text-xs uppercase font-black tracking-widest">Type to communicate</p>
+                      <p className="text-xs uppercase font-black tracking-widest">Chat initialized</p>
                    </div>
                  )}
               </div>
 
-              <form onSubmit={handleSendMessage} className="p-6 border-t border-slate-800 bg-slate-900/30 flex gap-3">
+              <form onSubmit={handleSendMessage} className="p-6 border-t border-slate-800 bg-slate-900/30 flex gap-3 shrink-0">
                  <input 
                    type="text" 
                    value={chatInput}
@@ -371,6 +386,7 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
            </div>
         </div>
 
+        {/* Controls Bar */}
         <div className="bg-slate-950/90 backdrop-blur-xl p-8 flex justify-center items-center gap-6 border-t border-slate-800/50 shrink-0">
            <div className="flex gap-3">
               <button onClick={toggleMute} className={`w-14 h-14 rounded-2xl transition flex items-center justify-center ${isMuted ? 'bg-rose-500 text-white shadow-lg' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>

@@ -730,6 +730,16 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     }
   }
 
+  async getCallHistory(): Promise<any[]> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      return db.prepare('SELECT * FROM call_history ORDER BY started_at DESC LIMIT 100').all();
+    } catch (error) {
+      console.error('Error getting call history:', error);
+      return [];
+    }
+  }
+
   // --- Admin Stats ---
   async getAdminStats(): Promise<{
     totalUsers: number;

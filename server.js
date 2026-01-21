@@ -30,6 +30,7 @@ const port = process.env.PORT || 3001;
 io.on('connection', (socket) => {
   socket.on('join-room', (roomId) => {
     socket.join(roomId);
+    socket.data.roomId = roomId; // Track room for disconnect
     socket.to(roomId).emit('user-connected', socket.id);
   });
 
@@ -51,7 +52,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    socket.broadcast.emit('user-disconnected', socket.id);
+    if (socket.data.roomId) {
+      socket.to(socket.data.roomId).emit('peer-left');
+    }
   });
 });
 
@@ -782,6 +785,20 @@ app.get('/api/support/calls', authenticateToken, async (req, res) => {
   } catch (error) {
     logger.error('Get calls error', { error: error.message });
     res.status(500).json({ error: 'Failed to fetch active calls' });
+  }
+});
+
+app.get('/api/support/call-history', authenticateToken, async (req, res) => {
+  const user = req.user;
+  if (user.role !== 'admin' && user.role !== 'support') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  try {
+    const history = await dbService.getCallHistory();
+    res.json(history);
+  } catch (error) {
+    logger.error('Get call history error', { error: error.message });
+    res.status(500).json({ error: 'Failed to fetch call history' });
   }
 });
 
