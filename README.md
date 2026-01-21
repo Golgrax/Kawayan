@@ -10,14 +10,18 @@ Kawayan AI is a professional content automation and management platform tailored
 - **Dedicated Support**: Built-in help desk with live call capabilities.
 
 ## 📖 Documentation
-All detailed documentation has been moved to the `/md` directory:
+All detailed documentation is available in the [`/md`](./md) directory. Follow the logical flow below:
 
-- [**User Guide**](./md/USER_GUIDE.md) - For SMEs, Support Staff, and Admins.
-- [**Architecture**](./md/ARCHITECTURE.md) - Technical stack and data flow.
-- [**Database Schema**](./md/DATABASE_SCHEMA.md) - Entity definitions and relationships.
-- [**Developer Guide**](./md/DEVELOPER_GUIDE.md) - Setup and development commands.
-- [**System Manual**](./md/SYSTEM_MANUAL.md) - Technical operations and troubleshooting.
-- [**API Guide**](./md/API_GUIDE.md) - Backend endpoint documentation.
+1. [**User Guide**](./md/USER_GUIDE.md) - **Start Here**. Overview for SMEs, Support, and Admins.
+2. [**System Manual**](./md/SYSTEM_MANUAL.md) - Technical operations and troubleshooting.
+3. [**Architecture**](./md/ARCHITECTURE.md) - Tech stack and system design.
+4. [**Database Schema**](./md/DATABASE_SCHEMA.md) - Entity definitions and relationships.
+5. [**Developer Guide**](./md/DEVELOPER_GUIDE.md) - Setup, commands, and contributions.
+6. [**API Guide**](./md/API_GUIDE.md) - Backend REST endpoint documentation.
+7. [**Account Types**](./md/ACCOUNTS.md) - Detailed role and permission matrix.
+8. [**Tables Summary**](./md/ALL_TABLES.md) - Quick reference for database tables.
+9. [**Social Auth**](./md/SOCIAL_AUTH.md) - Configuration for TikTok/Facebook.
+10. [**Payment Setup**](./md/PAYMENT_SETUP.md) - Xendit integration guide.
 
 ## 🛠️ Quick Start
 1. `npm install`
