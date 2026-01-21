@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { Users, AlertTriangle, TrendingUp, DollarSign, Activity, MessageSquare, CheckSquare, Clock, CheckCircle, Trash2, Edit, Save, X, Search, Shield, Settings, Power, Download, Upload, Filter, User as UserIcon, Lock, Calendar, CreditCard, Moon, Sun } from 'lucide-react';
+import { Users, AlertTriangle, TrendingUp, DollarSign, Activity, MessageSquare, CheckSquare, Clock, CheckCircle, Trash2, Edit, Save, X, Search, Shield, Settings, Power, Download, Upload, Filter, User as UserIcon, Lock, Calendar, CreditCard, Moon, Sun, XCircle, Wallet } from 'lucide-react';
 import UniversalDatabaseService from '../services/universalDatabaseService';
 import { supportService } from '../services/supportService';
 import { Ticket, User } from '../types';
 
 const AdminDashboard: React.FC = () => {
   const [dbService] = useState(() => new UniversalDatabaseService());
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'helpdesk' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'helpdesk' | 'logs' | 'settings'>('overview');
   
   // Stats State
   const [stats, setStats] = useState({
@@ -15,18 +15,21 @@ const AdminDashboard: React.FC = () => {
     activeUsers: 0,
     totalPostsGenerated: 0,
     revenue: 0,
+    cancelledTransactions: 0,
+    pendingTransactions: 0,
     revenueData: [] as any[],
     churnData: [] as any[]
   });
   
   const [dateRange, setDateRange] = useState({
     start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0]
+    end: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0] // Tomorrow
   });
 
   // Data State
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [users, setUsers] = useState<any[]>([]); // Using 'any' to include balance
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
   // User Management State
@@ -61,14 +64,16 @@ const AdminDashboard: React.FC = () => {
 
   const loadData = async () => {
     try {
-      const [adminStats, userList, ticketList] = await Promise.all([
+      const [adminStats, userList, ticketList, logs] = await Promise.all([
         dbService.getAdminStats(dateRange.start, dateRange.end),
         dbService.getAllUsers(),
-        dbService.getAllTicketsAdmin()
+        dbService.getAllTicketsAdmin(),
+        dbService.getAuditLogs(100)
       ]);
       setStats(adminStats);
       setUsers(userList);
       setTickets(ticketList);
+      setAuditLogs(logs);
     } catch (error) {
       console.error('Error loading admin data:', error);
     } finally {
@@ -300,15 +305,16 @@ const AdminDashboard: React.FC = () => {
       <div className="flex flex-col md:flex-row justify-between items-end gap-4">
         <div>
            <h1 className="text-3xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-             <Shield className="w-8 h-8 text-emerald-600"/> Admin God Mode
+             <Shield className="w-8 h-8 text-emerald-600"/> Administrator Panel
            </h1>
-           <p className="text-slate-500 dark:text-slate-400 mt-1">Full control over the Kawayan ecosystem.</p>
+           <p className="text-slate-500 dark:text-slate-400 mt-1">Comprehensive management of users, transactions, and system settings.</p>
         </div>
         <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl overflow-x-auto">
            {[ 
              { id: 'overview', label: 'Overview', icon: Activity },
              { id: 'users', label: 'Users', icon: Users },
              { id: 'helpdesk', label: 'Help Desk', icon: MessageSquare },
+             { id: 'logs', label: 'Audit Logs', icon: Clock },
              { id: 'settings', label: 'Settings', icon: Settings },
            ].map(tab => (
              <button 
@@ -346,12 +352,14 @@ const AdminDashboard: React.FC = () => {
              />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
             {[ 
               { label: 'Total Revenue', value: `₱${stats.revenue.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
               { label: 'Total Users', value: stats.totalUsers, icon: Users, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20' },
               { label: 'Active Sessions', value: stats.activeUsers, icon: Activity, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-900/20' },
               { label: 'Posts Created', value: stats.totalPostsGenerated, icon: TrendingUp, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-900/20' },
+              { label: 'Cancelled Txns', value: stats.cancelledTransactions, icon: XCircle, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/20' },
+              { label: 'Pending Txns', value: stats.pendingTransactions, icon: Wallet, color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-900/20' },
             ].map((stat, idx) => (
               <div key={idx} className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
                 <div className="flex justify-between items-start mb-4">
@@ -359,14 +367,14 @@ const AdminDashboard: React.FC = () => {
                      <stat.icon className={`w-6 h-6 ${stat.color}`} />
                    </div>
                 </div>
-                <h3 className="text-3xl font-black text-slate-800 dark:text-white">{stat.value}</h3>
-                <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1">{stat.label}</p>
+                <h3 className="text-2xl font-black text-slate-800 dark:text-white">{stat.value}</h3>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">{stat.label}</p>
               </div>
             ))}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm h-96">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm h-96">
               <h3 className="font-bold text-slate-800 dark:text-white mb-6">Revenue Growth (Selected Period)</h3>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={stats.revenueData}>
@@ -383,6 +391,30 @@ const AdminDashboard: React.FC = () => {
                   <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
                 </AreaChart>
               </ResponsiveContainer>
+            </div>
+
+            <div className="lg:col-span-1 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm h-96 flex flex-col">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="font-bold text-slate-800 dark:text-white">Latest Activity</h3>
+                <button onClick={() => setActiveTab('logs')} className="text-xs font-bold text-emerald-600 hover:text-emerald-700">View All</button>
+              </div>
+              <div className="flex-1 space-y-4 overflow-hidden">
+                {auditLogs.slice(0, 5).map((log, idx) => (
+                  <div key={idx} className="flex gap-3 border-b border-slate-50 dark:border-slate-700 pb-3 last:border-0">
+                    <div className="p-2 bg-slate-50 dark:bg-slate-900 rounded-lg h-fit">
+                      <Activity className="w-3.5 h-3.5 text-slate-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-800 dark:text-white truncate">{log.action.replace(/_/g, ' ')}</p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{log.user_id}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{new Date(log.timestamp).toLocaleTimeString()}</p>
+                    </div>
+                  </div>
+                ))}
+                {auditLogs.length === 0 && (
+                  <div className="h-full flex items-center justify-center text-slate-400 text-xs italic">No activity recorded yet.</div>
+                )}
+              </div>
             </div>
           </div>
         </>
@@ -552,6 +584,60 @@ const AdminDashboard: React.FC = () => {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* AUDIT LOGS TAB */}
+      {activeTab === 'logs' && (
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+            <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+              <Clock className="w-5 h-5 text-slate-400"/> System Audit Logs
+            </h3>
+            <div className="flex gap-2">
+               <button 
+                 onClick={() => loadData()}
+                 className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-medium hover:bg-slate-50 flex items-center gap-2"
+               >
+                 <Activity className="w-3.5 h-3.5"/> Refresh
+               </button>
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 font-medium border-b border-slate-100 dark:border-slate-700">
+                <tr>
+                  <th className="px-6 py-4">Timestamp</th>
+                  <th className="px-6 py-4">User ID</th>
+                  <th className="px-6 py-4">Action</th>
+                  <th className="px-6 py-4">Details</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
+                {auditLogs.length === 0 ? (
+                  <tr><td colSpan={4} className="text-center py-10 text-slate-400 italic">No logs recorded.</td></tr>
+                ) : auditLogs.map((log, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition">
+                    <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                      {new Date(log.timestamp).toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 font-mono text-[10px] text-slate-600 dark:text-slate-300">
+                      {log.user_id}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded text-[10px] font-bold uppercase">
+                        {log.action.replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400 max-w-xs truncate">
+                      {log.details || '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

@@ -65,7 +65,7 @@ You are Kawayan AI, a helpful virtual assistant for Filipino business owners.
 3. Be professional but friendly.
 `;
 
-const MODELS = ['gemini-1.5-flash', 'gemini-1.5-pro'];
+const MODELS = ['gemini-flash-latest', 'gemini-2.0-flash', 'gemini-2.5-flash'];
 
 const generateWithFallback = async (prompt: string) => {
   let lastError;

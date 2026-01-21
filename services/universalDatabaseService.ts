@@ -134,6 +134,8 @@ export class UniversalDatabaseService {
     activeUsers: number;
     totalPostsGenerated: number;
     revenue: number;
+    cancelledTransactions: number;
+    pendingTransactions: number;
     revenueData: { name: string; value: number }[];
     churnData: { name: string; value: number }[];
   }> {
@@ -169,6 +171,11 @@ export class UniversalDatabaseService {
   async adminUpdateSubscription(userId: string, plan: string, expiresAt: string): Promise<void> {
     const service = await this.getService();
     return service.adminUpdateSubscription(userId, plan, expiresAt);
+  }
+
+  async getAuditLogs(limit: number = 100): Promise<any[]> {
+    const service = await this.getService();
+    return service.getAuditLogs(limit);
   }
 
   async healthCheck(): Promise<{ status: string; timestamp: string }> {

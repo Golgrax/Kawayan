@@ -226,6 +226,8 @@ export class ClientDatabaseService {
     activeUsers: number;
     totalPostsGenerated: number;
     revenue: number;
+    cancelledTransactions: number;
+    pendingTransactions: number;
     revenueData: { name: string; value: number }[];
     churnData: { name: string; value: number }[];
   }> {
@@ -244,9 +246,24 @@ export class ClientDatabaseService {
         activeUsers: 0,
         totalPostsGenerated: 0,
         revenue: 0,
+        cancelledTransactions: 0,
+        pendingTransactions: 0,
         revenueData: [],
         churnData: []
       };
+    }
+  }
+
+  async getAuditLogs(limit: number = 100): Promise<any[]> {
+    try {
+      const response = await fetch(`${this.baseUrl}/admin/logs?limit=${limit}`, {
+        headers: this.getHeaders()
+      });
+      if (!response.ok) throw new Error('Failed to fetch logs');
+      return await response.json();
+    } catch (error) {
+      logger.error('Error getting audit logs (api)', { error });
+      return [];
     }
   }
 

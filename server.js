@@ -239,7 +239,7 @@ app.get('/api/profiles/:userId', authenticateToken, async (req, res) => {
   const userId = req.params.userId;
   const user = req.user;
   
-  if (userId !== user.userId && user.role !== 'admin') {
+  if (userId !== user.userId && user.role !== 'admin' && user.role !== 'support') {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
@@ -275,7 +275,7 @@ app.get('/api/posts/user/:userId', authenticateToken, async (req, res) => {
   const userId = req.params.userId;
   const user = req.user;
 
-  if (userId !== user.userId && user.role !== 'admin') {
+  if (userId !== user.userId && user.role !== 'admin' && user.role !== 'support') {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
@@ -311,7 +311,7 @@ app.get('/api/plans/:userId/:month', authenticateToken, async (req, res) => {
   const month = req.params.month;
   const user = req.user;
 
-  if (userId !== user.userId && user.role !== 'admin') {
+  if (userId !== user.userId && user.role !== 'admin' && user.role !== 'support') {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
@@ -329,7 +329,7 @@ app.get('/api/wallet/:userId', authenticateToken, async (req, res) => {
   const userId = req.params.userId;
   const user = req.user;
 
-  if (userId !== user.userId && user.role !== 'admin') {
+  if (userId !== user.userId && user.role !== 'admin' && user.role !== 'support') {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
@@ -597,23 +597,91 @@ app.post('/api/wallet/cancel', authenticateToken, async (req, res) => {
 });
 
 // Admin
-
 app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
-
+  const { start, end } = req.query;
   try {
-
-    const stats = await dbService.getAdminStats();
-
+    const stats = await dbService.getAdminStats(start, end);
     res.json(stats);
-
   } catch (error) {
-
     logger.error('Admin stats error', { error: error.message });
-
     res.status(500).json({ error: 'Failed to fetch stats' });
-
   }
+});
 
+app.get('/api/admin/logs', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 100;
+    const logs = await dbService.getAuditLogs(limit);
+    res.json(logs);
+  } catch (error) {
+    logger.error('Admin logs error', { error: error.message });
+    res.status(500).json({ error: 'Failed to fetch logs' });
+  }
+});
+
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const users = await dbService.getAllUsers();
+    res.json(users);
+  } catch (error) {
+    logger.error('Admin users error', { error: error.message });
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+app.get('/api/admin/tickets', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const tickets = await dbService.getAllTicketsAdmin();
+    res.json(tickets);
+  } catch (error) {
+    logger.error('Admin tickets error', { error: error.message });
+    res.status(500).json({ error: 'Failed to fetch tickets' });
+  }
+});
+
+app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const data = req.body;
+  try {
+    await dbService.updateUser(id, data);
+    res.json({ message: 'User updated successfully' });
+  } catch (error) {
+    logger.error('Admin update user error', { error: error.message });
+    res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    await dbService.deleteUser(id);
+    res.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    logger.error('Admin delete user error', { error: error.message });
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+app.post('/api/admin/balance', authenticateToken, requireAdmin, async (req, res) => {
+  const { userId, amount, reason } = req.body;
+  try {
+    await dbService.adminAdjustBalance(userId, amount, reason);
+    res.json({ message: 'Balance adjusted successfully' });
+  } catch (error) {
+    logger.error('Admin balance error', { error: error.message });
+    res.status(500).json({ error: 'Failed to adjust balance' });
+  }
+});
+
+app.post('/api/admin/subscription', authenticateToken, requireAdmin, async (req, res) => {
+  const { userId, plan, expiresAt } = req.body;
+  try {
+    await dbService.adminUpdateSubscription(userId, plan, expiresAt);
+    res.json({ message: 'Subscription updated successfully' });
+  } catch (error) {
+    logger.error('Admin subscription error', { error: error.message });
+    res.status(500).json({ error: 'Failed to update subscription' });
+  }
 });
 
 

@@ -266,6 +266,18 @@ export class DatabaseConfig {
         UNIQUE(user_id, platform)
       )
     `);
+
+    // Audit Logs table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        details TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
     
     // Create indexes for better performance
     this.db.exec(`
@@ -280,6 +292,8 @@ export class DatabaseConfig {
       CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
       CREATE INDEX IF NOT EXISTS idx_tickets_user_id ON tickets(user_id);
       CREATE INDEX IF NOT EXISTS idx_social_connections_user_id ON social_connections(user_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
     `);
     
     // Create triggers for updated_at timestamps

@@ -825,6 +825,8 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     activeUsers: number;
     totalPostsGenerated: number;
     revenue: number;
+    cancelledTransactions: number;
+    pendingTransactions: number;
     revenueData: { name: string; value: number }[];
     churnData: { name: string; value: number }[];
   }> {
@@ -837,7 +839,9 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
       const totalUsers = (db.prepare('SELECT COUNT(*) as count FROM users WHERE created_at BETWEEN ? AND ?').get(startFilter, endFilter) as { count: number }).count;
       const activeUsers = (db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'user' AND created_at BETWEEN ? AND ?").get(startFilter, endFilter) as { count: number }).count;
       const totalPostsGenerated = (db.prepare('SELECT COUNT(*) as count FROM generated_posts WHERE created_at BETWEEN ? AND ?').get(startFilter, endFilter) as { count: number }).count;
-      const revenue = (db.prepare("SELECT SUM(amount) as total FROM transactions WHERE status = 'COMPLETED' AND type = 'CREDIT' AND created_at BETWEEN ? AND ?").get(startFilter, endFilter) as { total: number }).total || 0;
+      const revenue = (db.prepare("SELECT SUM(amount) as total FROM transactions WHERE status = 'COMPLETED' AND type = 'CREDIT' AND date BETWEEN ? AND ?").get(startFilter, endFilter) as { total: number }).total || 0;
+      const cancelledTransactions = (db.prepare("SELECT COUNT(*) as count FROM transactions WHERE status = 'CANCELLED' AND date BETWEEN ? AND ?").get(startFilter, endFilter) as { count: number }).count;
+      const pendingTransactions = (db.prepare("SELECT COUNT(*) as count FROM transactions WHERE status = 'PENDING' AND date BETWEEN ? AND ?").get(startFilter, endFilter) as { count: number }).count;
       
       // Calculate Revenue Growth
       const userGrowth = db.prepare(`
@@ -865,6 +869,8 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
         activeUsers,
         totalPostsGenerated,
         revenue,
+        cancelledTransactions,
+        pendingTransactions,
         revenueData,
         churnData
       };
@@ -875,6 +881,8 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
         activeUsers: 0,
         totalPostsGenerated: 0,
         revenue: 0,
+        cancelledTransactions: 0,
+        pendingTransactions: 0,
         revenueData: [],
         churnData: []
       };
@@ -906,6 +914,16 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     }
   }
   
+  async getAuditLogs(limit: number = 100): Promise<any[]> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      return db.prepare('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?').all(limit);
+    } catch (error) {
+      console.error('Error getting audit logs:', error);
+      return [];
+    }
+  }
+
   // --- Database Management ---
   async close(): Promise<void> {
     this.dbConfig.close();

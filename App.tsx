@@ -12,7 +12,7 @@ import InsightsDashboard from './components/InsightsDashboard';
 import Billing from './components/Billing';
 import SupportDashboard from './components/SupportDashboard';
 import UniversalDatabaseService from './services/universalDatabaseService';
-import { LayoutDashboard, LogOut, Lock, ArrowRight, Settings as SettingsIcon, BarChart3, CreditCard } from 'lucide-react';
+import { LayoutDashboard, LogOut, Lock, ArrowRight, Settings as SettingsIcon, BarChart3, CreditCard, MessageSquare } from 'lucide-react';
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>(ViewState.LANDING);
@@ -181,37 +181,35 @@ const App: React.FC = () => {
                   )}
                   
                   {user?.role !== 'admin' && (
-                    <>
-                      <button 
-                        onClick={() => setView(ViewState.INSIGHTS)}
-                        className={`p-2 rounded-full transition ${view === ViewState.INSIGHTS ? 'bg-slate-100 dark:bg-slate-800 text-emerald-600' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-                        title="Insights"
-                      >
-                        <BarChart3 className="w-5 h-5" />
-                      </button>
-                      <button 
-                        onClick={() => setView(ViewState.BILLING)}
-                        className={`p-2 rounded-full transition ${view === ViewState.BILLING ? 'bg-slate-100 dark:bg-slate-800 text-emerald-600' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-                        title="Billing"
-                      >
-                        <CreditCard className="w-5 h-5" />
-                      </button>
-                      <button 
-                        onClick={() => setView(ViewState.SETTINGS)}
-                        className={`p-2 rounded-full transition ${view === ViewState.SETTINGS ? 'bg-slate-100 dark:bg-slate-800 text-emerald-600' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-                        title="Settings"
-                      >
-                        <SettingsIcon className="w-5 h-5" />
-                      </button>
-                    </>
+                    <div className="flex items-center bg-slate-100/50 dark:bg-slate-800/50 p-1 rounded-2xl border border-slate-200/50 dark:border-slate-700/50">
+                      {[
+                        { id: ViewState.SUPPORT_DASHBOARD, label: 'Support', icon: MessageSquare, roles: ['support'] },
+                        { id: ViewState.INSIGHTS, label: 'Insights', icon: BarChart3, roles: ['user'] },
+                        { id: ViewState.BILLING, label: 'Billing', icon: CreditCard, roles: ['user'] },
+                        { id: ViewState.SETTINGS, label: 'Settings', icon: SettingsIcon, roles: ['user', 'support'] },
+                      ].filter(item => item.roles.includes(user?.role || '')).map((item) => (
+                        <button 
+                          key={item.id}
+                          onClick={() => setView(item.id)}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300 font-bold text-xs uppercase tracking-wider ${
+                            view === item.id 
+                              ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' 
+                              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                          }`}
+                        >
+                          <item.icon className="w-4 h-4" />
+                          <span className={`${view === item.id ? 'inline' : 'hidden'} lg:inline`}>{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
                   )}
 
-                  <div className="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
+                  <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
                   <button 
                     onClick={handleLogout}
-                    className="flex items-center gap-2 text-slate-400 hover:text-rose-600 transition text-sm font-medium"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all duration-300 text-xs font-black uppercase tracking-widest"
                   >
-                    <LogOut className="w-4 h-4" /> <span className="hidden md:inline">Logout</span>
+                    <LogOut className="w-4 h-4" /> <span>Logout</span>
                   </button>
                 </>
               ) : (
@@ -257,7 +255,7 @@ const App: React.FC = () => {
                   case ViewState.CALENDAR:
                     return (user && brandProfile) ? <ContentCalendar profile={brandProfile} userId={user.id} /> : <div>Loading...</div>;
                   case ViewState.SETTINGS:
-                    return (brandProfile) ? <Settings profile={brandProfile} user={user} onProfileUpdate={handleProfileUpdate} onUserUpdate={handleUserUpdate} darkMode={darkMode} toggleDarkMode={() => updateTheme(!darkMode)} onClose={() => setView(ViewState.CALENDAR)} /> : <div>Loading...</div>;
+                    return (user?.role === 'support' || brandProfile) ? <Settings profile={brandProfile} user={user} onProfileUpdate={handleProfileUpdate} onUserUpdate={handleUserUpdate} darkMode={darkMode} toggleDarkMode={() => updateTheme(!darkMode)} onClose={() => setView(user?.role === 'support' ? ViewState.SUPPORT_DASHBOARD : ViewState.CALENDAR)} /> : <div>Loading...</div>;
                   case ViewState.INSIGHTS:
                     return <InsightsDashboard />;
                   case ViewState.BILLING:

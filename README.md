@@ -1,52 +1,28 @@
-# Kawayan AI - Philippine SME Content Manager
+# Kawayan AI - Social Media Content Manager for PH SMEs
 
-Kawayan AI is an intelligent social media content generation platform tailored specifically for Philippine MSMEs (Micro, Small, and Medium Enterprises). It uses Google's Gemini 2.5 Flash to generate culturally resonant "Taglish" content, images, and schedules.
+Kawayan AI is a professional content automation and management platform tailored for Filipino Small and Medium Enterprises (SMEs).
 
-## 🌟 Key Features
+## 🚀 Key Features
+- **AI Content Planning**: 7-day and monthly social media calendars in Taglish.
+- **Hybrid AI Engine**: Cloud-first (Google Gemini) with Local-fallback (Ollama).
+- **Social Media Integration**: TikTok, Facebook, and Instagram connection and insights.
+- **Administrative Governance**: Audit logs, user management, and manual wallet adjustments.
+- **Dedicated Support**: Built-in help desk with live call capabilities.
 
-- **Taglish Content Generation:** Creates captions that sound natural to Filipinos (combining English and Tagalog).
-- **Virality Scoring:** AI analyzes drafted content and predicts how "patok" (viral) it will be.
-- **Smart Scheduling:** Generates monthly content plans based on industry and brand voice.
-- **Image Generation:** Creates high-quality visual prompts and images using Gemini 2.5 Flash Image.
-- **Smart Date Selection:** Jump to any date by typing naturally (e.g., "Jan 12 26", "1/2/26", or just "2026"). Includes auto-correction for invalid dates (like clamping Feb 30 to Feb 28).
-- **Industry-Specific Trends:** Provides trending topics tailored specifically to your business industry.
-- **Admin Dashboard:** Professional overview for platform owners to track MRR, Churn, and User growth.
-- **Data Persistence:** Your content plans, drafted posts, and login session are saved automatically via LocalStorage.
+## 📖 Documentation
+All detailed documentation has been moved to the `/md` directory:
 
-## 🚀 Quick Start
+- [**User Guide**](./md/USER_GUIDE.md) - For SMEs, Support Staff, and Admins.
+- [**Architecture**](./md/ARCHITECTURE.md) - Technical stack and data flow.
+- [**Database Schema**](./md/DATABASE_SCHEMA.md) - Entity definitions and relationships.
+- [**Developer Guide**](./md/DEVELOPER_GUIDE.md) - Setup and development commands.
+- [**System Manual**](./md/SYSTEM_MANUAL.md) - Technical operations and troubleshooting.
+- [**API Guide**](./md/API_GUIDE.md) - Backend endpoint documentation.
 
-1.  **Install Dependencies:**
-    ```bash
-    npm install
-    ```
+## 🛠️ Quick Start
+1. `npm install`
+2. `cp .env.example .env` (Add your Gemini API Key)
+3. `npm run dev:full`
 
-2.  **Set Environment Variable:**
-    Create a `.env` file with your Google Gemini API Key:
-    ```bash
-    VITE_GEMINI_API_KEY="your_google_api_key_here"
-    ```
-
-3.  **Run Locally:**
-    ```bash
-    npm run dev
-    ```
-
-## 🔐 Admin Access
-
-To access the platform's administrative features:
-- **Direct Login:** Use the credentials below on the standard login page.
-- **Shortcut:** Click the small **Lock Icon** in the footer of the landing page.
-
-**Credentials:**
-- **Email:** `admin@kawayan.ph`
-- **Password:** `admin123`
-
-## 🛠 Technologies
-
-*   **Frontend:** React + TypeScript + Tailwind CSS
-*   **Backend:** Node.js (Express) + Better-SQLite3
-*   **Database:** Local SQLite (`kawayan.db`) with relational schema and triggers.
-*   **AI:** Google GenAI SDK (Gemini 2.5 Flash)
-*   **Payments:** Xendit Automated API + Webhook integration
-*   **Security:** JWT (JSON Web Tokens) for session management and API protection
-*   **Visuals:** Lucide Icons + Recharts
+---
+&copy; 2025 Kawayan AI. Designed for the Philippine SME ecosystem.

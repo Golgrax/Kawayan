@@ -1,17 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { MessageSquare, Clock, User, PhoneCall, Search, Loader2, Send, ArrowLeft, MoreVertical, CheckCircle, History, ArrowUpDown, ChevronDown } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
+import { MessageSquare, Clock, User as UserIcon, PhoneCall, Search, Loader2, Send, ArrowLeft, MoreVertical, CheckCircle, History, ArrowUpDown, ChevronDown, AlertTriangle, Download, RefreshCw } from 'lucide-react';
 import { supportService } from '../services/supportService';
-import { Ticket } from '../types';
+import { Ticket, User } from '../types';
 import CallOverlay from './CallOverlay';
 
 type SortKey = 'date' | 'user' | 'priority' | 'duration';
 type SortDirection = 'asc' | 'desc';
 
 const SupportDashboard: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'overview' | 'tickets' | 'calls'>('overview');
+  const [user] = useState<User | null>(() => {
+    const saved = localStorage.getItem('kawayan_session');
+    return saved ? JSON.parse(saved) : null;
+  });
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeCalls, setActiveCalls] = useState<any[]>([]);
   const [callHistory, setCallHistory] = useState<any[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const [filter, setFilter] = useState<'All' | 'Open' | 'Resolved' | 'History'>('All');
   const [isLoading, setIsLoading] = useState(true);
   const [reply, setReply] = useState('');
@@ -26,11 +33,43 @@ const SupportDashboard: React.FC = () => {
   useEffect(() => {
     loadTickets();
     loadCalls();
-    if (filter === 'History') loadCallHistory();
+    if (filter === 'History' || activeTab === 'calls') loadCallHistory();
 
     const callInterval = setInterval(loadCalls, 5000);
     return () => clearInterval(callInterval);
-  }, [filter]);
+  }, [filter, activeTab]);
+
+  useEffect(() => {
+    if (selectedTicket) {
+      loadUserProfile(selectedTicket.userId, selectedTicket.userEmail);
+    } else {
+      setUserProfile(null);
+    }
+  }, [selectedTicket]);
+
+  const loadUserProfile = async (userId: string, userEmail: string) => {
+    try {
+      const jwt = localStorage.getItem('kawayan_jwt');
+      const [profileRes, walletRes] = await Promise.all([
+        fetch(`/api/profiles/${userId}`, { headers: { 'Authorization': `Bearer ${jwt}` } }),
+        fetch(`/api/wallet/${userId}`, { headers: { 'Authorization': `Bearer ${jwt}` } })
+      ]);
+      
+      const profile = profileRes.ok ? await profileRes.json() : null;
+      const wallet = walletRes.ok ? await walletRes.json() : null;
+      
+      setUserProfile({ 
+        ...profile, 
+        wallet, 
+        email: userEmail,
+        // Ensure we have a name to show
+        businessName: profile?.businessName || userEmail.split('@')[0]
+      });
+    } catch (e) {
+      console.error("Failed to load user info", e);
+      setUserProfile({ email: userEmail, wallet: { balance: 0 } });
+    }
+  };
 
   const loadTickets = async () => {
     setIsLoading(true);
@@ -69,10 +108,10 @@ const SupportDashboard: React.FC = () => {
     setActiveCallRoom({ room: roomName, reason, userId });
   };
 
-  const handleResolve = async (id: string) => {
-    await supportService.updateTicketStatus(id, 'Resolved');
+  const handleStatusUpdate = async (id: string, status: 'Open' | 'Pending' | 'Resolved') => {
+    await supportService.updateTicketStatus(id, status);
     if (selectedTicket?.id === id) {
-      setSelectedTicket({ ...selectedTicket, status: 'Resolved' });
+      setSelectedTicket({ ...selectedTicket, status });
     }
     loadTickets();
   };
@@ -128,7 +167,38 @@ const SupportDashboard: React.FC = () => {
 
   const priorityWeight = { 'Critical': 4, 'High': 3, 'Medium': 2, 'Low': 1 };
 
-  // Advanced Sorting & Filtering Logic
+  const stats = useMemo(() => {
+    return {
+      total: tickets.length,
+      open: tickets.filter(t => t.status === 'Open').length,
+      pending: tickets.filter(t => t.status === 'Pending').length,
+      resolved: tickets.filter(t => t.status === 'Resolved').length,
+      activeCalls: activeCalls.length,
+      critical: tickets.filter(t => t.priority === 'Critical' && t.status !== 'Resolved').length
+    };
+  }, [tickets, activeCalls]);
+
+  const activityData = useMemo(() => {
+    const hours = ['9 AM', '12 PM', '3 PM', '6 PM', '9 PM', '12 AM'];
+    return hours.map((hour, index) => {
+      const count = tickets.filter(t => {
+        const h = new Date(t.createdAt).getHours();
+        // Map 24h to these slots: 9AM(8-11), 12PM(12-14), 3PM(15-17), 6PM(18-20), 9PM(21-23), 12AM(0-7)
+        if (index === 0) return h >= 8 && h < 12;
+        if (index === 1) return h >= 12 && h < 15;
+        if (index === 2) return h >= 15 && h < 18;
+        if (index === 3) return h >= 18 && h < 21;
+        if (index === 4) return h >= 21 && h < 24;
+        if (index === 5) return h >= 0 && h < 8;
+        return false;
+      }).length;
+      return { 
+        name: hour, 
+        tickets: count 
+      };
+    });
+  }, [tickets]);
+
   const processedTickets = useMemo(() => {
     let result = tickets.filter(t => {
       const matchesFilter = filter === 'All' || filter === 'History' || t.status === filter;
@@ -151,29 +221,8 @@ const SupportDashboard: React.FC = () => {
     });
   }, [tickets, filter, searchQuery, sortKey, sortDirection]);
 
-  const processedHistory = useMemo(() => {
-    let result = callHistory.filter(c => 
-      c.user_email.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      (c.reason && c.reason.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (c.call_id && c.call_id.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
-
-    return result.sort((a, b) => {
-      let comparison = 0;
-      if (sortKey === 'date') {
-        comparison = new Date(a.started_at).getTime() - new Date(b.started_at).getTime();
-      } else if (sortKey === 'user') {
-        comparison = a.user_email.localeCompare(b.user_email);
-      } else if (sortKey === 'duration') {
-        comparison = (a.duration_seconds || 0) - (b.duration_seconds || 0);
-      }
-      return sortDirection === 'desc' ? -comparison : comparison;
-    });
-  }, [callHistory, searchQuery, sortKey, sortDirection]);
-
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col gap-6 animate-in fade-in duration-500 overflow-hidden">
-      
       {activeCallRoom && (
         <CallOverlay 
           roomId={activeCallRoom.room} 
@@ -188,121 +237,240 @@ const SupportDashboard: React.FC = () => {
         />
       )}
 
-      <div className="flex justify-between items-end shrink-0 px-2">
+      <div className="flex flex-col md:flex-row justify-between items-end gap-4 shrink-0 px-2">
         <div>
            <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Support Help Desk</h1>
            <p className="text-slate-500 dark:text-slate-400 mt-1">Manage user concerns and session logs.</p>
         </div>
+        <div className="flex items-center gap-3">
+           <button 
+             onClick={() => { loadTickets(); loadCalls(); loadCallHistory(); }}
+             className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 hover:text-emerald-600 transition shadow-sm"
+             title="Refresh Data"
+           >
+             <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
+           </button>
+           <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl overflow-x-auto">
+              {[ 
+                { id: 'overview', label: 'Overview', icon: History },
+                { id: 'tickets', label: 'Tickets', icon: MessageSquare },
+                { id: 'calls', label: 'Call Center', icon: PhoneCall },
+              ].map(tab => (
+                <button 
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition whitespace-nowrap ${ 
+                    activeTab === tab.id 
+                    ? 'bg-white dark:bg-emerald-600 text-slate-900 dark:text-white shadow-sm' 
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <tab.icon className="w-4 h-4" /> {tab.label}
+                </button>
+              ))}
+           </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 overflow-hidden">
-         
-         {/* LEFT SIDEBAR: List, Search, Sort, Queue */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 overflow-y-auto pr-2 scrollbar-hide">
+          <div className="bg-emerald-600 rounded-3xl p-8 text-white relative overflow-hidden shadow-xl shadow-emerald-600/20">
+             <div className="relative z-10">
+                <h2 className="text-3xl font-black mb-2">Welcome back, {user?.email.split('@')[0]}!</h2>
+                <p className="text-emerald-100 font-medium">You have {stats.open} tickets waiting for your response.</p>
+             </div>
+             <MessageSquare className="absolute -right-8 -bottom-8 w-48 h-48 text-white/10 rotate-12" />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+            {[
+              { label: 'Total Tickets', value: stats.total, icon: MessageSquare, color: 'text-slate-600', bg: 'bg-slate-50' },
+              { label: 'Open', value: stats.open, icon: Clock, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+              { label: 'Awaiting', value: stats.pending, icon: Send, color: 'text-blue-600', bg: 'bg-blue-50' },
+              { label: 'Resolved', value: stats.resolved, icon: CheckCircle, color: 'text-slate-400', bg: 'bg-slate-50' },
+              { label: 'Live Calls', value: stats.activeCalls, icon: PhoneCall, color: 'text-rose-600', bg: 'bg-rose-50' },
+              { label: 'Critical', value: stats.critical, icon: AlertTriangle, color: 'text-rose-700', bg: 'bg-rose-100 animate-pulse' },
+            ].map((s, i) => (
+              <div key={i} className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
+                <div className={`w-10 h-10 rounded-xl ${s.bg} flex items-center justify-center mb-4`}>
+                  <s.icon className={`w-5 h-5 ${s.color}`} />
+                </div>
+                <h3 className="text-2xl font-black text-slate-800 dark:text-white">{s.value}</h3>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-1">{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-8 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm h-[320px] flex flex-col">
+              <h3 className="font-bold text-slate-800 dark:text-white mb-6">Support Activity</h3>
+              <div className="flex-1 min-h-0">
+                 <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={activityData}>
+                    <defs>
+                      <linearGradient id="colorTickets" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:opacity-10"/>
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 700}} dy={10} />
+                    <YAxis hide />
+                    <RechartsTooltip contentStyle={{borderRadius: '12px', border: 'none', backgroundColor: '#0f172a', color: '#fff', fontSize: '10px'}} itemStyle={{color: '#10b981', fontWeight: 'bold'}} />
+                    <Area type="monotone" dataKey="tickets" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorTickets)" animationDuration={1500} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="lg:col-span-4 bg-slate-900 text-white p-6 rounded-2xl shadow-xl flex flex-col justify-between">
+              <div>
+                <h3 className="font-bold text-emerald-400 mb-2">Support Performance</h3>
+                <p className="text-xs text-slate-400">Response time and resolution rate.</p>
+              </div>
+              <div className="space-y-4 my-6">
+                <div>
+                  <div className="flex justify-between text-[10px] font-bold mb-1 uppercase tracking-widest">
+                    <span>Resolution Rate</span>
+                    <span className="text-emerald-400">88%</span>
+                  </div>
+                  <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-emerald-500 h-full" style={{ width: '88%' }}></div>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-[10px] font-bold mb-1 uppercase tracking-widest">
+                    <span>Avg Response Time</span>
+                    <span className="text-emerald-400">4.2m</span>
+                  </div>
+                  <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-emerald-500 h-full" style={{ width: '75%' }}></div>
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setActiveTab('tickets')} className="w-full py-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2">
+                Go to Ticket Queue <ArrowUpDown className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'calls' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 overflow-hidden animate-in slide-in-from-right-4 duration-500">
+           <div className="lg:col-span-4 flex flex-col bg-slate-900 rounded-2xl shadow-xl overflow-hidden">
+              <div className="p-6 border-b border-white/10 flex justify-between items-center bg-emerald-600/10">
+                 <div className="flex items-center gap-3 text-white">
+                    <PhoneCall className="w-5 h-5 text-emerald-400" />
+                    <h3 className="font-bold uppercase tracking-widest text-sm">Live Queue</h3>
+                 </div>
+                 {activeCalls.length > 0 && <span className="bg-rose-500 text-[10px] px-2 py-0.5 rounded-full animate-pulse font-black text-white">LIVE</span>}
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
+                 {activeCalls.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center p-10 opacity-40">
+                       <PhoneCall className="w-12 h-12 mb-4 text-slate-500" />
+                       <p className="text-sm font-medium text-slate-400">No active calls in queue</p>
+                    </div>
+                 ) : (
+                    activeCalls.map(call => (
+                       <div key={call.user_id} className="p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 transition group">
+                          <div className="flex justify-between items-start mb-3">
+                             <div>
+                                <h4 className="font-bold text-white text-sm truncate max-w-[200px]">{call.user_email}</h4>
+                                <p className="text-[10px] text-slate-400 font-mono">ID: {call.room_name.split('-')[1]}</p>
+                             </div>
+                             <span className="text-[10px] text-emerald-400 font-bold bg-emerald-400/10 px-2 py-0.5 rounded-full">
+                                {Math.max(0, Math.floor((Date.now() - new Date(call.started_at).getTime()) / 60000))}m wait
+                             </span>
+                          </div>
+                          <button onClick={() => handleJoinCall(call.room_name, call.reason, call.user_id)} className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase transition shadow-lg flex items-center justify-center gap-2">
+                             <PhoneCall className="w-4 h-4" /> Connect Now
+                          </button>
+                       </div>
+                    ))
+                 )}
+              </div>
+           </div>
+
+           <div className="lg:col-span-8 flex flex-col bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden">
+              <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/20">
+                 <div className="flex items-center gap-3">
+                    <History className="w-5 h-5 text-slate-400" />
+                    <h3 className="font-bold text-slate-800 dark:text-white">Recent Call Logs</h3>
+                 </div>
+              </div>
+              <div className="flex-1 overflow-y-auto scrollbar-hide">
+                 <table className="w-full text-left border-collapse">
+                    <thead className="sticky top-0 bg-slate-50 dark:bg-slate-900 z-10 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 dark:border-slate-700">
+                       <tr>
+                          <th className="px-6 py-4">User</th>
+                          <th className="px-6 py-4">Date</th>
+                          <th className="px-6 py-4 text-center">Duration</th>
+                          <th className="px-6 py-4 text-right">Status</th>
+                       </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
+                       {callHistory.length === 0 ? (
+                          <tr><td colSpan={4} className="py-20 text-center text-slate-400 text-sm italic px-10">No call history logs found.</td></tr>
+                       ) : (
+                          callHistory.map(call => (
+                             <tr key={call.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition group">
+                                <td className="px-6 py-4 font-bold text-slate-900 dark:text-white text-xs">{call.user_email}</td>
+                                <td className="px-6 py-4 text-[11px] text-slate-500">{new Date(call.started_at).toLocaleString()}</td>
+                                <td className="px-6 py-4 text-center">
+                                   <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-slate-600 dark:text-slate-300">
+                                      {formatDuration(call.duration_seconds)}
+                                   </span>
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                   <span className="text-[10px] font-black uppercase tracking-tighter text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded">Completed</span>
+                                </td>
+                             </tr>
+                          ))
+                       )}
+                    </tbody>
+                 </table>
+              </div>
+           </div>
+        </div>
+      )}
+
+      <div className={`grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 overflow-hidden ${activeTab !== 'tickets' ? 'hidden' : ''}`}>
          <div className={`lg:col-span-4 flex flex-col gap-6 overflow-hidden ${selectedTicket ? 'hidden lg:flex' : 'flex'}`}>
             <div className="flex-1 flex flex-col bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden min-h-0">
-               {/* Sidebar Navigation */}
                <div className="p-4 border-b border-slate-100 dark:border-slate-700 space-y-4 bg-slate-50/50 dark:bg-slate-900/20">
                   <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                     {(['All', 'Open', 'Resolved', 'History'] as const).map(f => (
-                       <button 
-                        key={f}
-                        onClick={() => setFilter(f)} 
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${filter === f ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20' : 'bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-850'}`}
-                       >
-                         {f === 'History' ? 'Call Logs' : f}
+                     {(['All', 'Open', 'Resolved'] as const).map(f => (
+                       <button key={f} onClick={() => setFilter(f)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${filter === f ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-900 text-slate-500'}`}>
+                         {f}
                        </button>
                      ))}
                   </div>
-
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                       <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                       <input 
-                        type="text" 
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search..." 
-                        className="w-full pl-9 pr-4 py-2 bg-slate-100 dark:bg-slate-900 border border-transparent focus:border-emerald-500 rounded-xl text-sm outline-none transition-all" 
-                       />
-                    </div>
-                    {/* Sort Dropdown */}
-                    <div className="relative group">
-                       <button className="p-2 bg-slate-100 dark:bg-slate-900 rounded-xl border border-transparent hover:border-slate-300 dark:hover:border-slate-700 text-slate-500 transition-all flex items-center gap-1">
-                          <ArrowUpDown className="w-4 h-4" />
-                          <ChevronDown className="w-3 h-3" />
-                       </button>
-                       <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl py-2 z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
-                          <p className="px-4 py-1 text-[10px] font-black text-slate-400 uppercase tracking-widest">Sort By</p>
-                          <button onClick={() => setSortKey('date')} className={`w-full text-left px-4 py-2 text-xs font-bold hover:bg-emerald-50 dark:hover:bg-emerald-900/20 ${sortKey === 'date' ? 'text-emerald-600' : 'text-slate-600 dark:text-slate-300'}`}>Date</button>
-                          <button onClick={() => setSortKey('user')} className={`w-full text-left px-4 py-2 text-xs font-bold hover:bg-emerald-50 dark:hover:bg-emerald-900/20 ${sortKey === 'user' ? 'text-emerald-600' : 'text-slate-600 dark:text-slate-300'}`}>User (A-Z)</button>
-                          {filter !== 'History' && <button onClick={() => setSortKey('priority')} className={`w-full text-left px-4 py-2 text-xs font-bold hover:bg-emerald-50 dark:hover:bg-emerald-900/20 ${sortKey === 'priority' ? 'text-emerald-600' : 'text-slate-600 dark:text-slate-300'}`}>Priority</button>}
-                          {filter === 'History' && <button onClick={() => setSortKey('duration')} className={`w-full text-left px-4 py-2 text-xs font-bold hover:bg-emerald-50 dark:hover:bg-emerald-900/20 ${sortKey === 'duration' ? 'text-emerald-600' : 'text-slate-600 dark:text-slate-300'}`}>Duration</button>}
-                          <hr className="my-1 border-slate-100 dark:border-slate-700" />
-                          <button onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')} className="w-full text-left px-4 py-2 text-xs font-bold text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
-                             {sortDirection === 'desc' ? 'Descending' : 'Ascending'}
-                          </button>
-                       </div>
-                    </div>
+                  <div className="relative">
+                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                     <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search tickets..." className="w-full pl-9 pr-4 py-2 bg-slate-100 dark:bg-slate-900 border border-transparent focus:border-emerald-500 rounded-xl text-sm outline-none transition-all" />
                   </div>
                </div>
 
-               {/* Scrollable List Area */}
                <div className="flex-1 overflow-y-auto divide-y divide-slate-50 dark:divide-slate-700 scrollbar-hide">
                   {isLoading ? (
                      <div className="flex items-center justify-center py-20">
                        <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
                      </div>
-                  ) : filter === 'History' ? (
-                     processedHistory.length === 0 ? (
-                        <div className="py-20 text-center text-slate-400 text-sm italic px-10">No call history logs found.</div>
-                     ) : (
-                        processedHistory.map(call => (
-                           <div key={call.id} className="p-4 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition border-l-4 border-l-transparent hover:border-l-indigo-500">
-                              <div className="flex justify-between items-start mb-1">
-                                 <span className="font-bold text-slate-900 dark:text-white text-xs truncate max-w-[150px]">{call.user_email}</span>
-                                 <span className="text-[10px] text-slate-400 font-medium">{new Date(call.started_at).toLocaleDateString()}</span>
-                              </div>
-                              <p className="text-[10px] text-slate-500 line-clamp-1 italic mb-2">"{call.reason || 'No reason provided'}"</p>
-                              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-tighter">
-                                 <span className="text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded">Duration: {formatDuration(call.duration_seconds)}</span>
-                                 <span className="text-slate-400">ID: {call.call_id || 'N/A'}</span>
-                              </div>
-                           </div>
-                        ))
-                     )
                   ) : processedTickets.length === 0 ? (
-                     <div className="py-20 text-center text-slate-400 text-sm italic px-10">No tickets matching filters.</div>
+                     <div className="py-20 text-center text-slate-400 text-sm italic px-10">No tickets found.</div>
                   ) : (
                      processedTickets.map(ticket => (
-                        <div 
-                           key={ticket.id} 
-                           onClick={() => setSelectedTicket(ticket)}
-                           className={`p-4 cursor-pointer transition relative group ${selectedTicket?.id === ticket.id ? 'bg-emerald-50 dark:bg-emerald-900/10 border-l-4 border-l-emerald-500 shadow-inner' : 'hover:bg-slate-50 dark:hover:bg-slate-700/30 border-l-4 border-l-transparent'}`}
-                        >
+                        <div key={ticket.id} onClick={() => setSelectedTicket(ticket)} className={`p-4 cursor-pointer transition relative group ${selectedTicket?.id === ticket.id ? 'bg-emerald-50 dark:bg-emerald-900/10 border-l-4 border-l-emerald-500' : 'hover:bg-slate-50 dark:hover:bg-slate-700/30 border-l-4 border-l-transparent'}`}>
                            <div className="flex justify-between items-start mb-1">
                               <span className="font-bold text-slate-900 dark:text-white text-sm truncate max-w-[150px]">{ticket.userEmail}</span>
-                              <span className="text-[10px] text-slate-400 font-medium">{new Date(ticket.createdAt).toLocaleDateString()}</span>
+                              <span className="text-[10px] text-slate-400">{new Date(ticket.createdAt).toLocaleDateString()}</span>
                            </div>
-                           <h4 className="text-xs font-medium text-slate-600 dark:text-slate-300 truncate mb-3">{ticket.subject}</h4>
-                           <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                 <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded shadow-sm ${
-                                    ticket.priority === 'Critical' ? 'bg-rose-100 text-rose-700' :
-                                    ticket.priority === 'High' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
-                                 }`}>{ticket.priority}</span>
-                                 <span className={`text-[9px] font-black uppercase tracking-wider ${ticket.status === 'Open' ? 'text-emerald-600' : ticket.status === 'Resolved' ? 'text-slate-400' : 'text-blue-500'}`}>{ticket.status}</span>
-                              </div>
-                              <button 
-                                 onClick={(e) => {
-                                    e.stopPropagation();
-                                    const suffix = ticket.userId.substring(ticket.userId.length - 4);
-                                    handleJoinCall(`KawayanSupport-${suffix}`, ticket.subject, ticket.userId);
-                                 }}
-                                 className="opacity-0 group-hover:opacity-100 transition p-1.5 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-800"
-                                 title="Call this user"
-                              >
-                                 <PhoneCall className="w-3.5 h-3.5" />
-                              </button>
+                           <h4 className="text-xs font-medium text-slate-600 dark:text-slate-300 truncate">{ticket.subject}</h4>
+                           <div className="mt-2 flex items-center gap-2">
+                              <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${ticket.priority === 'Critical' ? 'bg-rose-100 text-rose-700' : ticket.priority === 'High' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{ticket.priority}</span>
+                              <span className={`text-[9px] font-black uppercase tracking-wider ${ticket.status === 'Open' ? 'text-emerald-600' : ticket.status === 'Resolved' ? 'text-slate-400' : 'text-blue-500'}`}>{ticket.status}</span>
                            </div>
                         </div>
                      ))
@@ -310,161 +478,111 @@ const SupportDashboard: React.FC = () => {
                </div>
             </div>
 
-            {/* Live Queue - Now also scrollable if many calls */}
-            <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl shrink-0 max-h-[300px] flex flex-col">
+            <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl shrink-0 max-h-[200px] flex flex-col">
                <div className="flex items-center gap-3 mb-4 shrink-0">
                   <PhoneCall className="w-5 h-5 text-emerald-400" />
-                  <span className="font-bold text-sm uppercase tracking-wider">Live Call Queue</span>
-                  {activeCalls.length > 0 && (
-                    <span className="ml-auto bg-rose-500 text-[10px] px-2 py-0.5 rounded-full animate-pulse font-black">LIVE</span>
-                  )}
+                  <span className="font-bold text-sm uppercase tracking-wider">Live Queue</span>
+                  {activeCalls.length > 0 && <span className="ml-auto bg-rose-500 text-[10px] px-2 py-0.5 rounded-full animate-pulse font-black">LIVE</span>}
                </div>
-               
                <div className="flex-1 overflow-y-auto space-y-3 scrollbar-hide">
-                  {activeCalls.length === 0 ? (
-                    <p className="text-[10px] text-slate-400 italic">No active call requests.</p>
-                  ) : (
-                    activeCalls.map(call => (
-                                               <div key={call.user_id} className="p-3 bg-slate-800/50 rounded-xl border border-slate-700 flex flex-col gap-2">
-                                                  <div className="flex justify-between items-start">
-                                                     <div className="flex flex-col min-w-0">
-                                                        <span className="text-[10px] font-bold text-slate-300 truncate">{call.user_email}</span>
-                                                        <span className="text-[9px] text-slate-500 font-bold">ID: {call.room_name.split('-')[1]}</span>
-                                                     </div>
-                                                     <span className="text-[9px] text-emerald-400 font-mono shrink-0">
-                                                        {Math.max(0, Math.floor((Date.now() - new Date(call.started_at).getTime()) / 60000))}m wait
-                                                     </span>
-                                                  </div>                        <p className="text-[10px] text-slate-400 line-clamp-2 bg-black/20 p-1.5 rounded-lg border border-white/5 italic">
-                            "{call.reason || 'No specific reason provided'}"
-                        </p>
-                        <button 
-                            onClick={() => handleJoinCall(call.room_name, call.reason, call.user_id)}
-                            className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-[10px] font-black uppercase transition shadow-md"
-                        >
-                            Connect
-                        </button>
-                      </div>
-                    ))
-                  )}
+                  {activeCalls.length === 0 ? <p className="text-[10px] text-slate-400 italic">No active requests.</p> : activeCalls.map(call => (
+                    <div key={call.user_id} className="p-3 bg-white/5 rounded-xl border border-white/10 flex justify-between items-center">
+                       <span className="text-[10px] font-bold truncate max-w-[120px]">{call.user_email}</span>
+                       <button onClick={() => handleJoinCall(call.room_name, call.reason, call.user_id)} className="bg-emerald-600 hover:bg-emerald-700 px-3 py-1 rounded text-[9px] font-black uppercase">Connect</button>
+                    </div>
+                  ))}
                </div>
             </div>
          </div>
 
-         {/* RIGHT: Conversation Area - Independently scrollable */}
          <div className={`lg:col-span-8 flex flex-col bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden min-h-0 ${!selectedTicket ? 'hidden lg:flex' : 'flex'}`}>
             {selectedTicket ? (
-               <>
-                  <div className="p-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 flex justify-between items-center shrink-0">
-                     <div className="flex items-center gap-3">
-                        <button onClick={() => setSelectedTicket(null)} className="lg:hidden p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition">
-                           <ArrowLeft className="w-5 h-5 text-slate-600 dark:text-slate-300" />
-                        </button>
-                        <div>
-                           <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 text-sm">
-                              {selectedTicket.subject}
-                              <span className="text-[10px] text-slate-400 font-normal">#{selectedTicket.ticketNum}</span>
-                           </h3>
-                           <div className="flex items-center gap-3 text-[10px] text-slate-500 dark:text-slate-400">
-                              <span className="flex items-center gap-1"><User className="w-3 h-3" /> {selectedTicket.userEmail}</span>
-                              <span className="font-bold text-emerald-600 uppercase">Call ID: {selectedTicket.userId.substring(selectedTicket.userId.length - 4)}</span>
+               <div className="flex flex-1 overflow-hidden">
+                  <div className="flex-1 flex flex-col min-w-0">
+                     <div className="p-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 flex justify-between items-center shrink-0">
+                        <div className="flex items-center gap-3">
+                           <button onClick={() => setSelectedTicket(null)} className="lg:hidden p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition"><ArrowLeft className="w-5 h-5" /></button>
+                           <div>
+                              <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 text-sm">{selectedTicket.subject} <span className="text-[10px] text-slate-400">#{selectedTicket.ticketNum}</span></h3>
+                              <div className="flex items-center gap-3 text-[10px] text-slate-500">
+                                 <span className="flex items-center gap-1"><UserIcon className="w-3 h-3" /> {selectedTicket.userEmail}</span>
+                              </div>
+                           </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                           <div className="relative group/status">
+                              <button className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition border ${selectedTicket.status === 'Open' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : selectedTicket.status === 'Pending' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                                 <div className={`w-2 h-2 rounded-full ${selectedTicket.status === 'Open' ? 'bg-emerald-500' : selectedTicket.status === 'Pending' ? 'bg-blue-500' : 'bg-slate-400'}`} />
+                                 {selectedTicket.status} <ChevronDown className="w-3 h-3" />
+                              </button>
+                              <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-slate-800 border border-slate-200 rounded-xl shadow-xl py-1 z-50 opacity-0 invisible group-hover/status:opacity-100 group-hover/status:visible transition-all">
+                                 {(['Open', 'Pending', 'Resolved'] as const).map(s => (
+                                    <button key={s} onClick={() => handleStatusUpdate(selectedTicket.id, s)} className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-slate-50 text-slate-600 transition">{s}</button>
+                                 ))}
+                              </div>
                            </div>
                         </div>
                      </div>
-                     <div className="flex items-center gap-2">
-                        {selectedTicket.status !== 'Resolved' && (
-                           <button 
-                              onClick={() => handleResolve(selectedTicket.id)}
-                              className="px-3 py-1.5 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-emerald-200 transition"
-                           >
-                              <CheckCircle className="w-3 h-3" /> Resolve
-                           </button>
-                        )}
-                        <button className="p-1.5 text-slate-400 hover:text-slate-600 transition"><MoreVertical className="w-4 h-4" /></button>
-                     </div>
-                  </div>
 
-                  <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50 dark:bg-slate-900/30">
-                     {selectedTicket.messages?.map((msg, idx) => (
-                        <div key={idx} className={`flex ${msg.sender === 'agent' ? 'justify-end' : 'justify-start'}`}>
-                           <div className={`max-w-[70%] group`}>
-                              <div className={`flex items-center gap-2 mb-1 ${msg.sender === 'agent' ? 'justify-end' : 'justify-start'}`}>
-                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{msg.sender}</span>
-                              </div>
-                              <div className={`px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
-                                 msg.sender === 'agent' 
-                                    ? 'bg-slate-900 dark:bg-emerald-600 text-white rounded-tr-none' 
-                                    : 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-600 rounded-tl-none'
-                              }`}>
+                     <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50 dark:bg-slate-900/30 scrollbar-hide">
+                        {selectedTicket.messages?.map((msg, idx) => (
+                           <div key={idx} className={`flex ${msg.sender === 'agent' ? 'justify-end' : 'justify-start'}`}>
+                              <div className={`px-4 py-2.5 rounded-2xl text-sm shadow-sm ${msg.sender === 'agent' ? 'bg-slate-900 dark:bg-emerald-600 text-white rounded-tr-none' : 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white border border-slate-200 rounded-tl-none'}`}>
                                  {msg.text}
                               </div>
                            </div>
+                        ))}
+                     </div>
+
+                     {selectedTicket.status !== 'Resolved' && (
+                        <div className="p-4 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700 shrink-0 space-y-3">
+                           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                              {[{ label: 'Greeting', text: 'Mabuhay! How can I help you?' }, { label: 'Checking', text: 'Wait lang po, let me check.' }, { label: 'Resolved', text: 'Resolved na po!' }].map((qr, i) => (
+                                 <button key={i} onClick={() => setReply(qr.text)} className="px-2 py-1 bg-slate-100 dark:bg-slate-900 text-slate-500 rounded-md text-[10px] font-bold hover:bg-emerald-50 transition whitespace-nowrap">{qr.label}</button>
+                              ))}
+                           </div>
+                           <form onSubmit={handleSendReply} className="flex gap-3">
+                              <textarea rows={1} value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Type reply..." className="flex-1 bg-slate-100 dark:bg-slate-900 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none resize-none" />
+                              <button type="submit" disabled={isSending || !reply.trim()} className="bg-emerald-600 text-white rounded-xl px-4 py-2.5 font-bold text-sm hover:bg-emerald-700 transition shadow-lg flex items-center gap-2 disabled:opacity-50">
+                                 {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                 <span className="hidden sm:inline">Reply</span>
+                              </button>
+                           </form>
                         </div>
-                     ))}
+                     )}
                   </div>
 
-                  {selectedTicket.status !== 'Resolved' ? (
-                     <form onSubmit={handleSendReply} className="p-4 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700 flex gap-3 shrink-0">
-                        <textarea 
-                           rows={1}
-                           value={reply}
-                           onChange={(e) => setReply(e.target.value)}
-                           onKeyDown={(e) => {
-                              if (e.key === 'Enter' && !e.shiftKey) {
-                                 e.preventDefault();
-                                 handleSendReply(e);
-                              }
-                           }}
-                           placeholder="Type your reply here..."
-                           className="flex-1 bg-slate-100 dark:bg-slate-900 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none resize-none"
-                        />
-                        <button 
-                           type="submit" 
-                           disabled={isSending || !reply.trim()}
-                           className="bg-emerald-600 text-white rounded-xl px-4 py-2.5 font-bold text-sm hover:bg-emerald-700 transition shadow-lg flex items-center gap-2 disabled:opacity-50"
-                        >
-                           {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                           <span>Reply</span>
-                        </button>
-                     </form>
-                  ) : (
-                     <div className="p-6 bg-slate-50 dark:bg-slate-900/50 text-center shrink-0 border-t border-slate-100 dark:border-slate-700">
-                        <p className="text-sm text-slate-500 dark:text-slate-400 font-medium italic">Resolved.</p>
+                  <div className="hidden xl:flex w-72 border-l border-slate-100 dark:border-slate-700 flex-col bg-slate-50 dark:bg-slate-900/10">
+                     <div className="p-6 border-b border-slate-100 dark:border-slate-700 text-center">
+                        <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-3 shadow-inner"><UserIcon className="w-8 h-8" /></div>
+                        <h4 className="font-bold text-slate-800 dark:text-white truncate">{userProfile?.businessName || 'Anonymous'}</h4>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{userProfile?.industry || 'General SME'}</p>
                      </div>
-                  )}
-               </>
+                     <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
+                        <div>
+                           <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Wallet Info</h5>
+                           <div className="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 shadow-sm">
+                              <p className="text-xs text-slate-500 mb-1">Current Balance</p>
+                              <p className="text-lg font-black text-slate-800 dark:text-white">₱{userProfile?.wallet?.balance?.toLocaleString() || '0'}</p>
+                           </div>
+                        </div>
+                        <button onClick={() => { const suffix = selectedTicket.userId.substring(selectedTicket.userId.length - 4); handleJoinCall(`KawayanSupport-${suffix}`, selectedTicket.subject, selectedTicket.userId); }} className="w-full py-2 bg-emerald-600 text-white rounded-lg text-[10px] font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition">
+                           <PhoneCall className="w-3.5 h-3.5" /> Call Customer
+                        </button>
+                     </div>
+                  </div>
+               </div>
             ) : (
                <div className="flex-1 flex flex-col items-center justify-center text-center p-10 space-y-4">
-                  <div className="w-20 h-20 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center">
-                     <MessageSquare className="w-10 h-10 text-slate-300" />
-                  </div>
-                  <div className="max-w-xs">
-                     <h3 className="text-xl font-bold text-slate-800 dark:text-white">Select a Ticket</h3>
-                     <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">Start assisting your users.</p>
-                  </div>
-                                   </div>
-                                 )}
-               
-                                 <div className="pt-2 mt-4 border-t border-slate-800">
-                                   <p className="text-[9px] text-slate-500 uppercase font-bold mb-2 tracking-widest">Manual Join</p>
-                                   <div className="flex gap-2">
-                                      <input 
-                                       id="manualCallId" 
-                                       type="text" 
-                                       placeholder="Enter ID" 
-                                       className="w-full bg-slate-800 border-none rounded-lg px-3 py-2 text-[10px] text-white outline-none focus:ring-1 focus:ring-emerald-500" 
-                                      />
-                                      <button 
-                                         onClick={() => {
-                                            const id = (document.getElementById('manualCallId') as HTMLInputElement).value;
-                                            if (id) handleJoinCall(`KawayanSupport-${id}`);
-                                         }}
-                                         className="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-[10px] font-bold transition"
-                                      >Join</button>
-                                   </div>
-                                 </div>
-                              </div>
-                           </div>
-                        </div>  );
+                  <div className="w-20 h-20 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center shadow-inner"><MessageSquare className="w-10 h-10 text-slate-300" /></div>
+                  <h3 className="text-xl font-bold text-slate-800 dark:text-white">Select a Ticket</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">Pick a user from the left to start the conversation.</p>
+               </div>
+            )}
+         </div>
+      </div>
+    </div>
+  );
 };
 
 export default SupportDashboard;
