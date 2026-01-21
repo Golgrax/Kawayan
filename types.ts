@@ -5,6 +5,8 @@ export interface User {
   role: 'user' | 'admin' | 'support';
   businessName?: string;
   theme?: 'light' | 'dark';
+  balance?: number;
+  createdAt?: string;
 }
 
 export interface BrandProfile {

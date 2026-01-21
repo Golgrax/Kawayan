@@ -520,6 +520,84 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     }
   }
   
+  async getAllUsers(): Promise<User[]> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      const rows = db.prepare(`
+        SELECT u.id, u.email, u.role, u.business_name as businessName, u.created_at as createdAt, w.balance
+        FROM users u
+        LEFT JOIN wallets w ON u.id = w.user_id
+        ORDER BY u.created_at DESC
+      `).all() as any[];
+      return rows.map(row => ({
+        id: row.id,
+        email: row.email,
+        role: row.role,
+        businessName: row.businessName,
+        createdAt: row.createdAt,
+        balance: row.balance || 0
+      }));
+    } catch (error) {
+      console.error('Error getting all users:', error);
+      return [];
+    }
+  }
+
+  async updateUser(userId: string, data: any): Promise<void> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      const fields = [];
+      const values = [];
+      if (data.role) { fields.push('role = ?'); values.push(data.role); }
+      if (data.businessName !== undefined) { fields.push('business_name = ?'); values.push(data.businessName); }
+      
+      if (fields.length === 0) return;
+      
+      values.push(userId);
+      db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    } catch (error) {
+      console.error('Error updating user:', error);
+      throw error;
+    }
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      db.transaction(() => {
+        db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+        db.prepare('DELETE FROM wallets WHERE user_id = ?').run(userId);
+        db.prepare('DELETE FROM transactions WHERE user_id = ?').run(userId);
+        db.prepare('DELETE FROM brand_profiles WHERE user_id = ?').run(userId);
+        db.prepare('DELETE FROM generated_posts WHERE user_id = ?').run(userId);
+        db.prepare('DELETE FROM tickets WHERE user_id = ?').run(userId);
+      })();
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      throw error;
+    }
+  }
+
+  async adminAdjustBalance(userId: string, amount: number, reason: string): Promise<void> {
+    try {
+      await this.createTransaction(userId, Math.abs(amount), reason, amount >= 0 ? 'CREDIT' : 'DEBIT', 'COMPLETED');
+    } catch (error) {
+      console.error('Error adjusting balance:', error);
+      throw error;
+    }
+  }
+
+  async adminUpdateSubscription(userId: string, plan: 'FREE' | 'PRO' | 'ENTERPRISE', expiresAt: string): Promise<void> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      db.prepare('UPDATE wallets SET subscription = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(plan, userId);
+      // If we had an expires_at column in wallets, we'd update it here too.
+    } catch (error) {
+      console.error('Error updating subscription:', error);
+      throw error;
+    }
+  }
+
   // --- Social Media Connections ---
   async saveSocialConnection(userId: string, platform: string, data: any): Promise<void> {
     const db = this.dbConfig.getDatabase();
@@ -742,7 +820,7 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
   }
 
   // --- Admin Stats ---
-  async getAdminStats(): Promise<{
+  async getAdminStats(start?: string, end?: string): Promise<{
     totalUsers: number;
     activeUsers: number;
     totalPostsGenerated: number;
@@ -753,19 +831,22 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     const db = this.dbConfig.getDatabase();
     
     try {
-      const totalUsers = (db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number }).count;
-      const activeUsers = (db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'user'").get() as { count: number }).count;
-      const totalPostsGenerated = (db.prepare('SELECT COUNT(*) as count FROM generated_posts').get() as { count: number }).count;
-      const revenue = totalUsers * 500; // Mock revenue: 500 PHP per user
+      const startFilter = start ? start : '1970-01-01';
+      const endFilter = end ? end : '9999-12-31';
+
+      const totalUsers = (db.prepare('SELECT COUNT(*) as count FROM users WHERE created_at BETWEEN ? AND ?').get(startFilter, endFilter) as { count: number }).count;
+      const activeUsers = (db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'user' AND created_at BETWEEN ? AND ?").get(startFilter, endFilter) as { count: number }).count;
+      const totalPostsGenerated = (db.prepare('SELECT COUNT(*) as count FROM generated_posts WHERE created_at BETWEEN ? AND ?').get(startFilter, endFilter) as { count: number }).count;
+      const revenue = (db.prepare("SELECT SUM(amount) as total FROM transactions WHERE status = 'COMPLETED' AND type = 'CREDIT' AND created_at BETWEEN ? AND ?").get(startFilter, endFilter) as { total: number }).total || 0;
       
-      // Calculate Revenue Growth (Users per month * 500)
+      // Calculate Revenue Growth
       const userGrowth = db.prepare(`
         SELECT strftime('%Y-%m', created_at) as month, COUNT(*) as count 
         FROM users 
-        WHERE created_at >= date('now', '-6 months')
+        WHERE created_at BETWEEN ? AND ?
         GROUP BY month 
         ORDER BY month ASC
-      `).all() as { month: string; count: number }[];
+      `).all(startFilter, endFilter) as { month: string; count: number }[];
       
       const revenueData = userGrowth.map(item => {
         const date = new Date(item.month + '-01');
