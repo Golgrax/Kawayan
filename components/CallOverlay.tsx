@@ -13,13 +13,14 @@ interface Props {
 const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reason, targetUserId }) => {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   
-  // Streams
+  // Local Streams
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
   
   // Remote UI States (Signaled via Socket)
   const [remoteCamActive, setRemoteCamActive] = useState(false);
   const [remoteScreenActive, setRemoteScreenActive] = useState(false);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   
   // Local UI States
   const [isMuted, setIsMuted] = useState(false);
@@ -34,9 +35,9 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
   const socketRef = useRef<Socket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
+  const localScreenVideoRef = useRef<HTMLVideoElement>(null); // NEW: Local screen preview
   const remoteCamVideoRef = useRef<HTMLVideoElement>(null);
   const remoteScreenVideoRef = useRef<HTMLVideoElement>(null);
-  const screenStreamRef = useRef<MediaStream | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const ICE_SERVERS = {
@@ -56,20 +57,22 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
     }
   }, [messages, showChat]);
 
-  // Handle Local Stream View
+  // Handle Local Stream Views
   useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
     }
   }, [localStream, isVideoOff]);
 
+  useEffect(() => {
+    if (localScreenVideoRef.current && screenStreamRef.current && isScreenSharing) {
+      localScreenVideoRef.current.srcObject = screenStreamRef.current;
+    }
+  }, [isScreenSharing]);
+
   // Handle Remote Stream Views
   useEffect(() => {
     if (remoteStream) {
-      const videoTracks = remoteStream.getVideoTracks();
-      // Heuristic: Cam usually has audio or is the first track
-      // In a 1:1 call with cam + screen, we'll have multiple tracks.
-      // For simplicity in this native version, we'll map them based on signaled state
       if (remoteCamVideoRef.current && remoteCamActive) {
         remoteCamVideoRef.current.srcObject = remoteStream;
       }
@@ -90,7 +93,7 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: { echoCancellation: true, noiseSuppression: true },
-          video: false // Truly start with hardware off
+          video: false 
         });
         
         setLocalStream(stream);
@@ -152,11 +155,8 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
 
   const handleCallEndCleanup = async () => {
     socketRef.current?.disconnect();
-    
-    // TRULY STOP ALL HARDWARE
     localStream?.getTracks().forEach(t => { t.stop(); t.enabled = false; });
     screenStreamRef.current?.getTracks().forEach(t => { t.stop(); t.enabled = false; });
-    
     pcRef.current?.close();
     
     const session = JSON.parse(localStorage.getItem('kawayan_session') || '{}');
@@ -287,18 +287,18 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
         <div className="flex-1 flex overflow-hidden">
            
            {/* Video / Content Area */}
-           <div className={`${anyoneSharing ? 'flex-[2]' : 'w-0'} transition-all duration-500 relative bg-slate-900 flex flex-col border-r border-slate-800/50 overflow-hidden`}>
+           <div className={`${anyoneSharing ? 'flex-[2.5]' : 'w-0'} transition-all duration-500 relative bg-slate-900 flex flex-col border-r border-slate-800/50 overflow-hidden`}>
               
               {/* Remote Screen Share (BIG) */}
               <div className={`flex-1 relative ${!remoteScreenActive && 'hidden'}`}>
                  <video ref={remoteScreenVideoRef} autoPlay playsInline className="w-full h-full object-contain" />
-                 <div className="absolute top-4 left-4 bg-emerald-600 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-xl">Peer Screen</div>
+                 <div className="absolute top-4 left-4 bg-emerald-600 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-xl border border-white/10">Peer Screen</div>
               </div>
 
               {/* Remote Camera - Centered if no screen, else floating small */}
-              <div className={`${remoteCamActive ? 'flex' : 'hidden'} ${remoteScreenActive ? 'absolute bottom-8 right-8 w-64 h-48 border-2 border-slate-700 shadow-2xl rounded-3xl overflow-hidden' : 'flex-1'} transition-all duration-500 bg-black items-center justify-center`}>
+              <div className={`${remoteCamActive ? 'flex' : 'hidden'} ${remoteScreenActive ? 'absolute bottom-8 right-8 w-64 h-48 border-2 border-slate-700 shadow-2xl rounded-3xl overflow-hidden z-40' : 'flex-1'} transition-all duration-500 bg-black items-center justify-center`}>
                  <video ref={remoteCamVideoRef} autoPlay playsInline className={`w-full h-full ${remoteScreenActive ? 'object-cover' : 'object-contain'}`} />
-                 <div className="absolute top-3 left-3 bg-black/60 px-2 py-0.5 rounded text-[8px] text-white font-black uppercase tracking-tighter border border-white/10">{isAgent ? 'User' : 'Agent'}</div>
+                 <div className="absolute top-3 left-3 bg-black/60 px-2 py-0.5 rounded text-[8px] text-white font-black uppercase tracking-tighter border border-white/10 z-50">{isAgent ? 'User' : 'Agent'}</div>
               </div>
 
               {/* Status Message (Waiting) */}
@@ -310,10 +310,16 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
                 </div>
               )}
 
-              {/* Local Mini-Preview (Bottom Left) */}
-              <div className={`absolute bottom-8 left-8 transition-all duration-500 ${isVideoOff && !isScreenSharing ? 'w-0 h-0 opacity-0' : 'w-48 h-32 border-emerald-500/50 opacity-100'} bg-black rounded-3xl overflow-hidden border-2 border-slate-700 shadow-2xl z-50`}>
+              {/* Local Mini-Preview (Camera) */}
+              <div className={`absolute bottom-8 left-8 transition-all duration-500 ${isVideoOff ? 'w-0 h-0 opacity-0' : 'w-48 h-32 border-2 border-emerald-500 shadow-2xl z-50'} bg-black rounded-3xl overflow-hidden`}>
                  <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
-                 <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-[8px] text-white font-black uppercase tracking-tighter border border-white/10">You</div>
+                 <div className="absolute bottom-2 left-2 bg-emerald-600 px-2 py-0.5 rounded text-[8px] text-white font-black uppercase tracking-tighter border border-white/10">Your Camera</div>
+              </div>
+
+              {/* NEW: Local Screen Share Preview */}
+              <div className={`absolute top-8 left-8 transition-all duration-500 ${!isScreenSharing ? 'w-0 h-0 opacity-0' : 'w-64 h-40 border-2 border-blue-500 shadow-2xl z-50'} bg-black rounded-3xl overflow-hidden`}>
+                 <video ref={localScreenVideoRef} autoPlay muted playsInline className="w-full h-full object-contain" />
+                 <div className="absolute bottom-2 left-2 bg-blue-600 px-2 py-0.5 rounded text-[8px] text-white font-black uppercase tracking-tighter border border-white/10">Your Screen</div>
               </div>
            </div>
 
@@ -394,8 +400,10 @@ const CallOverlay: React.FC<Props> = ({ onEndCall, roomId, isAgent = false, reas
                 </button>
               )}
            </div>
+           
            <div className="h-10 w-px bg-slate-800 mx-4" />
-           <button onClick={onEndCall} className="px-10 py-4 bg-rose-600 text-white rounded-2xl hover:bg-rose-700 transition shadow-xl flex items-center gap-3 font-black uppercase tracking-widest text-sm transform active:scale-95">
+           
+           <button onClick={onEndCall} className="px-10 py-4 bg-rose-600 text-white rounded-2xl hover:bg-rose-700 transition shadow-xl shadow-rose-600/20 flex items-center gap-3 font-black uppercase tracking-widest text-sm transform active:scale-95">
              <PhoneOff className="w-5 h-5" /> <span>End Session</span>
            </button>
         </div>
