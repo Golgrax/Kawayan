@@ -12,60 +12,85 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
   const [isLocked, setIsLocked] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Smooth Scroll & Scrub Refs
+  const targetScrollY = useRef(0);
+  const currentScrollY = useRef(0);
   const targetTimeRef = useRef(0);
   const currentTimeRef = useRef(0);
+  const [contentOpacity, setContentOpacity] = useState(1);
+  const [contentScale, setContentScale] = useState(1);
   const requestRef = useRef<number>(0);
+  const lastUpdateRef = useRef<number>(0);
 
-  // --- Optimized Smooth Scroll Scrub Logic ---
+  // --- Optimized Liquid Scroll & Scrub Logic ---
   useEffect(() => {
     const video = videoRef.current;
     const container = containerRef.current;
     if (!video || !container) return;
 
-    const onScroll = () => {
+    const handleScroll = () => {
+      targetScrollY.current = window.scrollY;
+    };
+
+    const smoothUpdate = (time: number) => {
+      // 1. Smooth the Page Scroll (Ultra-Smooth 'Weighty' Feel)
+      const scrollEasing = 0.05; // Lower = more 'liquid' and weighty
+      currentScrollY.current += (targetScrollY.current - currentScrollY.current) * scrollEasing;
+      
+      // Calculate progress based on smoothed scroll
       const rect = container.getBoundingClientRect();
+      const containerTop = currentScrollY.current + rect.top;
       const scrollHeight = container.scrollHeight - window.innerHeight;
-      const offset = -rect.top;
+      const offset = currentScrollY.current - containerTop;
       const progress = Math.min(1, Math.max(0, offset / scrollHeight));
 
-      setIsLocked(rect.bottom > window.innerHeight);
+      setIsLocked(currentScrollY.current < containerTop + scrollHeight && currentScrollY.current >= containerTop);
 
+      // 2. Cinematic Fades and Scales
+      // Content starts fading out after 10% scroll and is gone by 40%
+      const opacity = Math.max(0, 1 - (progress * 3));
+      const scale = 1 - (progress * 0.1); // Subtle zoom out effect
+      setContentOpacity(opacity);
+      setContentScale(scale);
+
+      // 3. Smooth the Video Scrubbing
       if (video.duration) {
         targetTimeRef.current = video.duration * progress;
       }
-    };
 
-    const smoothUpdate = () => {
-      // Lerp logic: current = current + (target - current) * factor
-      // 0.1 provides a nice balance of snappiness and smoothness
-      const easing = 0.1;
-      currentTimeRef.current += (targetTimeRef.current - currentTimeRef.current) * easing;
+      const videoEasing = 0.1;
+      const delta = (targetTimeRef.current - currentTimeRef.current) * videoEasing;
+      currentTimeRef.current += delta;
 
       if (video && !isNaN(video.duration)) {
-        // Only update if the change is noticeable to keep FPS high
-        if (Math.abs(video.currentTime - currentTimeRef.current) > 0.01) {
+        const timeSinceLastUpdate = time - lastUpdateRef.current;
+        const isSignificantChange = Math.abs(video.currentTime - currentTimeRef.current) > 0.01;
+
+        if (!video.seeking && timeSinceLastUpdate > 16 && isSignificantChange) {
           video.currentTime = currentTimeRef.current;
+          lastUpdateRef.current = time;
         }
       }
+
       requestRef.current = requestAnimationFrame(smoothUpdate);
     };
 
-    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('scroll', handleScroll, { passive: true });
     requestRef.current = requestAnimationFrame(smoothUpdate);
 
     return () => {
-      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('scroll', handleScroll);
       cancelAnimationFrame(requestRef.current);
     };
   }, [videoLoaded]);
 
-  // --- React Parallax Logic ---
+  // --- Parallax Logic ---
   const handleParallaxMove = (e: React.MouseEvent) => {
     const { clientX, clientY } = e;
     const centerX = window.innerWidth / 2;
     const centerY = window.innerHeight / 2;
     
-    // Calculate distance from center (-1 to 1)
     setMousePos({
       x: (clientX - centerX) / centerX,
       y: (clientY - centerY) / centerY
@@ -79,8 +104,11 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
     >
       
       {/* Hero Section with Scroll Scrubbing Video */}
-      <div ref={containerRef} className="relative h-[1000vh] bg-slate-900">
-        <section className={`${isLocked ? 'fixed inset-0' : 'absolute bottom-0 left-0'} h-screen w-full flex items-center overflow-hidden z-10 transform-gpu`}>
+      <div ref={containerRef} className="relative h-[600vh] bg-slate-900">
+        <section 
+          className={`${isLocked ? 'fixed inset-0' : (currentScrollY.current >= (containerRef.current?.offsetTop || 0) + (containerRef.current?.scrollHeight || 0) - window.innerHeight ? 'absolute bottom-0 left-0' : 'absolute top-0 left-0')} h-screen w-full flex items-center overflow-hidden z-10 transform-gpu`}
+          style={{ willChange: 'transform' }}
+        >
           
           {/* Background Video with Hardware Acceleration */}
           <video
@@ -88,58 +116,79 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
             src="/video/video.mp4"
             onLoadedMetadata={() => setVideoLoaded(true)}
             className="absolute inset-0 w-full h-full object-cover -z-20 pointer-events-none transform-gpu"
-            style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
+            style={{ 
+              willChange: 'transform',
+              backfaceVisibility: 'hidden', 
+              WebkitBackfaceVisibility: 'hidden',
+              transform: 'translate3d(0,0,0) scale(1.02)'
+            }}
             muted
             playsInline
             preload="auto"
+            disablePictureInPicture
+            disableRemotePlayback
           />
 
-          {/* Overlay Darkening */}
-          <div className="absolute inset-0 bg-slate-900/40 dark:bg-black/60 -z-10 transition-opacity duration-700"></div>
+          {/* Overlay Darkening with Progressive Fade */}
+          <div 
+            className="absolute inset-0 bg-slate-900/40 dark:bg-black/60 -z-10 transition-opacity duration-700"
+            style={{ opacity: 0.4 + (1 - contentOpacity) * 0.6 }}
+          ></div>
+
+          {/* Bottom Fade Transition */}
+          <div className="absolute bottom-0 left-0 w-full h-64 bg-gradient-to-t from-slate-50 dark:from-slate-900 to-transparent z-20"></div>
 
           {/* Scroll Indicator */}
-          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 text-white/50 animate-bounce">
+          <div 
+            className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 text-white/50 animate-bounce transition-opacity duration-500"
+            style={{ opacity: contentOpacity }}
+          >
             <span className="text-[10px] font-black uppercase tracking-[0.2em]">Scroll to Advance</span>
             <div className="w-px h-8 bg-gradient-to-b from-emerald-500 to-transparent"></div>
           </div>
-
-          {/* Decorative Gradients */}
-          <div className="absolute top-20 right-0 w-[600px] h-[600px] bg-emerald-300/20 rounded-full blur-[120px] -z-10 animate-pulse"></div>
-          <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-blue-300/20 rounded-full blur-[100px] -z-10"></div>
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
               
               {/* Left Column: Text */}
               <div 
-                className="text-center lg:text-left transition-transform duration-100 ease-out"
-                style={{ transform: `translate(${mousePos.x * -20}px, ${mousePos.y * -20}px)` }}
+                className="text-center lg:text-left transition-transform duration-100 ease-out z-20"
+                style={{ 
+                  transform: `translate3d(${mousePos.x * -15}px, ${mousePos.y * -15}px, 0) scale(${contentScale})`,
+                  opacity: contentOpacity,
+                  pointerEvents: contentOpacity < 0.1 ? 'none' : 'auto'
+                }}
               >
-                <h1 className="text-6xl sm:text-7xl lg:text-8xl font-black text-slate-900 dark:text-white tracking-tight mb-8 leading-[0.9]">
+                <h1 
+                  className="text-6xl sm:text-7xl lg:text-8xl font-black text-white tracking-tight mb-8 leading-[0.95]"
+                  style={{ filter: 'drop-shadow(0 0 15px rgba(255,255,255,0.4))' }}
+                >
                   Social Media <br /> 
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500">
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400">
                     On Autopilot.
                   </span>
                 </h1>
                 
-                <p className="text-xl text-slate-600 dark:text-slate-300 max-w-xl mx-auto lg:mx-0 mb-10 leading-relaxed font-light">
-                  Kawayan AI uses advanced local LLMs to generate viral <span className="font-semibold text-slate-900 dark:text-white">"Taglish"</span> captions, trendy visuals, and schedules for Philippine MSMEs.
+                <p 
+                  className="text-xl text-white max-w-xl mx-auto lg:mx-0 mb-10 leading-relaxed font-bold"
+                  style={{ filter: 'drop-shadow(0 0 10px rgba(255,255,255,0.3))' }}
+                >
+                  Kawayan AI uses advanced local LLMs to generate viral "Taglish" captions, trendy visuals, and schedules for Philippine MSMEs.
                 </p>
                 
                 <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
                   <button 
                     onClick={() => onNavigate(ViewState.SIGNUP)}
-                    className="group relative px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-bold text-lg overflow-hidden shadow-2xl hover:shadow-emerald-500/20 transition-all hover:-translate-y-1"
+                    className="group/btn relative px-8 py-4 bg-white text-slate-900 rounded-2xl font-bold text-lg overflow-hidden shadow-[0_0_25px_rgba(255,255,255,0.3)] transition-all hover:-translate-y-1 w-full sm:w-auto hover:bg-emerald-50"
                   >
-                    <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-emerald-500 to-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                    <span className="relative flex items-center gap-2 group-hover:text-white dark:group-hover:text-white">
-                      Start Free Trial <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                    <span className="relative flex items-center justify-center gap-2">
+                      Start Free Trial <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />
                     </span>
                   </button>
                   
                   <button 
                     onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
-                    className="px-8 py-4 bg-transparent border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-2xl font-bold text-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-2"
+                    className="px-8 py-4 bg-white/10 backdrop-blur-md border border-white/30 text-white rounded-2xl font-bold text-lg hover:bg-white/20 transition flex items-center justify-center gap-2 w-full sm:w-auto"
                   >
                     <Play className="w-5 h-5 fill-current" /> Watch Demo
                   </button>
