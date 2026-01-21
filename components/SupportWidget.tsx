@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MessageCircle, X, Send, Phone, FileText, Loader2, ArrowLeft } from 'lucide-react';
 import { chatWithSupportBot } from '../services/geminiService';
 import { supportService } from '../services/supportService';
@@ -6,22 +6,91 @@ import CallOverlay from './CallOverlay';
 
 const SupportWidget: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [mode, setMode] = useState<'chat' | 'ticket'>('chat');
+  const [mode, setMode] = useState<'chat' | 'ticket' | 'call'>('chat');
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isCalling, setIsCalling] = useState(false);
+  const [callReason, setCallReason] = useState('');
   
   // Ticket State
   const [ticketSubject, setTicketSubject] = useState('');
   const [ticketPriority, setTicketPriority] = useState('Medium');
 
-  const [chatHistory, setChatHistory] = useState<{sender: 'user'|'bot'|'system', text: string}[]>([
+  const [chatHistory, setChatHistory] = useState<{sender: 'user'|'bot'|'system'|'agent', text: string, timestamp?: string}[]>([
     { sender: 'bot', text: 'Hi! I am the Kawayan AI Support Bot. How can I help you today?' }
   ]);
+  const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
+  const [userIdSuffix, setUserIdSuffix] = useState<string>('');
+
+  useEffect(() => {
+    const fetchSession = () => {
+      const session = JSON.parse(localStorage.getItem('kawayan_session') || '{}');
+      if (session.id) {
+        setUserIdSuffix(session.id.substring(session.id.length - 4));
+      }
+    };
+    fetchSession();
+    window.addEventListener('storage', fetchSession);
+    return () => window.removeEventListener('storage', fetchSession);
+  }, []);
+
+  // Poll for ticket updates
+  useEffect(() => {
+    let interval: any;
+    if (activeTicketId && isOpen) {
+      interval = setInterval(async () => {
+        try {
+          const response = await fetch('/api/support/tickets', {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('kawayan_jwt')}` }
+          });
+          if (response.ok) {
+            const tickets = await response.json();
+            const current = tickets.find((t: any) => t.id === activeTicketId);
+            if (current && current.messages) {
+               if (current.messages.length > chatHistory.filter(m => m.sender !== 'bot' && m.sender !== 'system').length) {
+                  const newHistory = current.messages;
+                  setChatHistory(newHistory);
+               }
+            }
+          }
+        } catch (e) { console.error("Polling error", e); }
+      }, 5000);
+    }
+    return () => clearInterval(interval);
+  }, [activeTicketId, isOpen, chatHistory]);
+
+  const handleStartCall = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!callReason.trim()) return;
+    setIsCalling(true);
+    setMode('chat');
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!message.trim()) return;
+
+    if (activeTicketId) {
+       const userMsg = { sender: 'user' as const, text: message, timestamp: new Date().toISOString() };
+       const updatedHistory = [...chatHistory, userMsg];
+       setChatHistory(updatedHistory);
+       setMessage('');
+       
+       try {
+         await fetch(`/api/support/tickets/${activeTicketId}`, {
+           method: 'PUT',
+           headers: {
+             'Authorization': `Bearer ${localStorage.getItem('kawayan_jwt')}`,
+             'Content-Type': 'application/json'
+           },
+           body: JSON.stringify({ 
+             status: 'Open',
+             messages: updatedHistory.filter(m => m.sender === 'user' || m.sender === 'agent') 
+           })
+         });
+       } catch (e) { console.error("Failed to send message to ticket", e); }
+       return;
+    }
 
     const newHistory = [...chatHistory, { sender: 'user' as const, text: message }];
     setChatHistory(newHistory);
@@ -40,18 +109,16 @@ const SupportWidget: React.FC = () => {
 
   const handleSubmitTicket = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Create Ticket
     const userSession = JSON.parse(localStorage.getItem('kawayan_session') || '{}');
     if (userSession && userSession.id) {
       try {
-        const ticket = await supportService.createTicket(userSession, ticketSubject, ticketPriority);
-        
+        const ticket = await supportService.createTicket(userSession, ticketSubject, ticketPriority, "Initial Request: " + ticketSubject);
         if (ticket) {
+          setActiveTicketId(ticket.id);
           setMode('chat');
-          setChatHistory(prev => [...prev, 
-            { sender: 'system' as const, text: `🎫 Ticket Created: #${ticket.ticketNum} - ${ticketSubject}` },
-            { sender: 'bot', text: 'I have logged your ticket. A human agent will review it shortly.' }
+          setChatHistory([
+            { sender: 'system' as const, text: `🎫 Ticket Created: #${ticket.ticketNum}` },
+            { sender: 'user', text: ticketSubject }
           ]);
           setTicketSubject('');
         } else {
@@ -68,22 +135,24 @@ const SupportWidget: React.FC = () => {
 
   return (
     <>
-      {isCalling && <CallOverlay onEndCall={() => setIsCalling(false)} />}
+      {isCalling && <CallOverlay onEndCall={() => setIsCalling(false)} reason={callReason} />}
       
       <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end space-y-4">
-        
-        {/* Chat Window */}
         {isOpen && (
           <div className="bg-white dark:bg-slate-800 w-80 h-96 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 fade-in duration-300">
-            
-            {/* Header */}
-            <div className="bg-slate-900 dark:bg-emerald-600 p-4 flex justify-between items-center text-white">
-              <div className="flex items-center gap-2">
-                {mode === 'ticket' && (
+            <div className="bg-slate-900 dark:bg-emerald-600 p-4 flex justify-between items-center text-white shrink-0">
+              <div className="flex items-center gap-2 overflow-hidden">
+                {(mode === 'ticket' || mode === 'call') && (
                   <button onClick={() => setMode('chat')} className="mr-1 hover:text-slate-300"><ArrowLeft className="w-4 h-4"/></button>
                 )}
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                <span className="font-bold text-sm">{mode === 'chat' ? 'Kawayan Support' : 'Submit Ticket'}</span>
+                <div className="flex flex-col min-w-0">
+                  <span className="font-bold text-xs truncate">
+                    {mode === 'chat' ? 'Kawayan Support' : mode === 'ticket' ? 'Submit Ticket' : 'Submit Request'}
+                  </span>
+                  {userIdSuffix && (
+                    <span className="text-[11px] font-black text-emerald-400">CALL ID: {userIdSuffix}</span>
+                  )}
+                </div>
               </div>
               <button onClick={() => setIsOpen(false)} className="hover:text-slate-300 transition">
                 <X className="w-4 h-4" />
@@ -92,17 +161,14 @@ const SupportWidget: React.FC = () => {
 
             {mode === 'chat' ? (
               <>
-                {/* Quick Actions */}
                 <div className="flex border-b border-slate-100 dark:border-slate-700">
                    <button onClick={() => setMode('ticket')} className="flex-1 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center justify-center gap-1 border-r border-slate-100 dark:border-slate-700">
                      <FileText className="w-3 h-3"/> New Ticket
                    </button>
-                   <button onClick={() => setIsCalling(true)} className="flex-1 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center justify-center gap-1">
+                   <button onClick={() => setMode('call')} className="flex-1 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center justify-center gap-1">
                      <Phone className="w-3 h-3"/> Call Us
                    </button>
                 </div>
-
-                {/* Chat Area */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50 dark:bg-slate-900/50">
                   {chatHistory.map((msg, idx) => (
                     <div key={idx} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -111,6 +177,8 @@ const SupportWidget: React.FC = () => {
                           ? 'bg-emerald-600 text-white rounded-br-none' 
                           : msg.sender === 'system'
                           ? 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 italic text-center w-full'
+                          : msg.sender === 'agent'
+                          ? 'bg-slate-900 dark:bg-emerald-700 text-white rounded-bl-none shadow-md border-l-4 border-emerald-400'
                           : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 rounded-bl-none shadow-sm'
                       }`}>
                         {msg.text}
@@ -125,8 +193,6 @@ const SupportWidget: React.FC = () => {
                     </div>
                   )}
                 </div>
-
-                {/* Input Area */}
                 <form onSubmit={handleSend} className="p-3 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700 flex gap-2">
                   <input 
                     type="text" 
@@ -141,26 +207,15 @@ const SupportWidget: React.FC = () => {
                   </button>
                 </form>
               </>
-            ) : (
-              /* Ticket Form */
-              <form onSubmit={handleSubmitTicket} className="flex-1 p-4 space-y-4 bg-white dark:bg-slate-800">
+            ) : mode === 'ticket' ? (
+              <form onSubmit={handleSubmitTicket} className="flex-1 p-4 space-y-4 bg-white dark:bg-slate-800 overflow-y-auto">
                  <div>
                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Subject</label>
-                   <input 
-                     required
-                     type="text" 
-                     value={ticketSubject} 
-                     onChange={(e) => setTicketSubject(e.target.value)}
-                     className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-900 dark:text-white text-sm"
-                   />
+                   <input required type="text" value={ticketSubject} onChange={(e) => setTicketSubject(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-900 dark:text-white text-sm" />
                  </div>
                  <div>
                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Priority</label>
-                   <select 
-                     value={ticketPriority} 
-                     onChange={(e) => setTicketPriority(e.target.value)}
-                     className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-900 dark:text-white text-sm"
-                   >
+                   <select value={ticketPriority} onChange={(e) => setTicketPriority(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-900 dark:text-white text-sm">
                      <option>Low</option>
                      <option>Medium</option>
                      <option>High</option>
@@ -169,15 +224,23 @@ const SupportWidget: React.FC = () => {
                  </div>
                  <button type="submit" className="w-full py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm hover:bg-emerald-700">Submit Ticket</button>
               </form>
+            ) : (
+              <form onSubmit={handleStartCall} className="flex-1 p-4 space-y-4 bg-white dark:bg-slate-800">
+                 <div className="text-center py-4">
+                    <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center mx-auto mb-4"><Phone className="w-8 h-8 text-emerald-600" /></div>
+                    <h4 className="font-bold text-slate-900 dark:text-white">Request Live Support</h4>
+                    <p className="text-xs text-slate-500 mt-1">Briefly tell us what you need help with.</p>
+                 </div>
+                 <div>
+                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">What is your concern?</label>
+                   <textarea required value={callReason} onChange={(e) => setCallReason(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-900 dark:text-white text-sm resize-none" rows={3} placeholder="e.g. Help with content generation..." />
+                 </div>
+                 <button type="submit" className="w-full py-3 bg-emerald-600 text-white rounded-lg font-bold text-sm hover:bg-emerald-700 shadow-lg transition transform active:scale-95">Start Call Bridge</button>
+              </form>
             )}
           </div>
         )}
-
-        {/* Floating Button */}
-        <button 
-          onClick={() => setIsOpen(!isOpen)}
-          className="group relative flex items-center justify-center w-14 h-14 bg-slate-900 dark:bg-emerald-600 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300"
-        >
+        <button onClick={() => setIsOpen(!isOpen)} className="group relative flex items-center justify-center w-14 h-14 bg-slate-900 dark:bg-emerald-600 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300">
           {isOpen ? <X className="w-6 h-6" /> : <MessageCircle className="w-6 h-6" />}
         </button>
       </div>

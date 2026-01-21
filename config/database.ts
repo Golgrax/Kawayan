@@ -207,6 +207,40 @@ export class DatabaseConfig {
       )
     `);
 
+    // Active Calls table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS active_calls (
+        user_id TEXT PRIMARY KEY,
+        user_email TEXT NOT NULL,
+        room_name TEXT NOT NULL,
+        reason TEXT,
+        started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Migration for active_calls reason
+    const callTableInfo = this.db.prepare("PRAGMA table_info(active_calls)").all() as any[];
+    if (!callTableInfo.some(col => col.name === 'reason')) {
+      console.log('Migration: Adding reason column to active_calls');
+      this.db.exec("ALTER TABLE active_calls ADD COLUMN reason TEXT");
+    }
+
+    // Call History table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS call_history (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        user_email TEXT NOT NULL,
+        reason TEXT,
+        started_at DATETIME NOT NULL,
+        ended_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        duration_seconds INTEGER,
+        agent_id TEXT,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
     // Social Connections table
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS social_connections (

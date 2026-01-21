@@ -3,6 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import { DatabaseService } from './services/databaseService.ts';
 import { JWTService } from './services/jwtService.ts';
 import { logger } from './utils/logger.ts';
@@ -15,7 +17,34 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 
 const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
 const port = process.env.PORT || 3001;
+
+// Signaling Logic
+io.on('connection', (socket) => {
+  socket.on('join-room', (roomId) => {
+    socket.join(roomId);
+    socket.to(roomId).emit('user-connected', socket.id);
+  });
+
+  socket.on('signal', (data) => {
+    // data contains: { to: socketId, from: socketId, signal: sdp/ice }
+    io.to(data.to).emit('signal', {
+      from: socket.id,
+      signal: data.signal
+    });
+  });
+
+  socket.on('disconnect', () => {
+    socket.broadcast.emit('user-disconnected', socket.id);
+  });
+});
 
 // Trust proxy (required for Codespaces/Heroku/etc to get correct protocol/host)
 app.set('trust proxy', true);
@@ -655,7 +684,7 @@ app.delete('/api/social/connections/:platform', authenticateToken, async (req, r
 app.get('/api/support/tickets', authenticateToken, async (req, res) => {
   const user = req.user;
   try {
-    const tickets = user.role === 'admin' 
+    const tickets = (user.role === 'admin' || user.role === 'support')
       ? await dbService.getAllTicketsAdmin() 
       : await dbService.getTickets(user.userId);
     res.json(tickets);
@@ -721,6 +750,42 @@ app.put('/api/support/tickets/:id', authenticateToken, async (req, res) => {
   } catch (error) {
     logger.error('Update ticket error', { error: error.message });
     res.status(500).json({ error: 'Failed to update ticket' });
+  }
+});
+
+// --- Active Call Routes ---
+
+app.get('/api/support/calls', authenticateToken, async (req, res) => {
+  try {
+    const calls = await dbService.getActiveCalls();
+    res.json(calls);
+  } catch (error) {
+    logger.error('Get calls error', { error: error.message });
+    res.status(500).json({ error: 'Failed to fetch active calls' });
+  }
+});
+
+app.post('/api/support/calls/register', authenticateToken, async (req, res) => {
+  const { roomName, reason } = req.body;
+  const user = req.user;
+  try {
+    await dbService.registerCall(user.userId, user.email, roomName, reason);
+    res.json({ message: 'Call registered' });
+  } catch (error) {
+    logger.error('Register call error', { error: error.message });
+    res.status(500).json({ error: 'Failed to register call' });
+  }
+});
+
+app.post('/api/support/calls/unregister', authenticateToken, async (req, res) => {
+  const user = req.user;
+  const { agentId } = req.body;
+  try {
+    await dbService.unregisterCall(user.userId, agentId);
+    res.json({ message: 'Call unregistered' });
+  } catch (error) {
+    logger.error('Unregister call error', { error: error.message });
+    res.status(500).json({ error: 'Failed to unregister call' });
   }
 });
 
@@ -907,17 +972,7 @@ app.use((req, res) => {
 
 
 // Start Server
-
-
-
-app.listen(port, () => {
-
-
-
-
-
+httpServer.listen(port, () => {
   logger.info(`Server running on port ${port}`);
-
   console.log(`Server running on http://localhost:${port}`);
-
 });

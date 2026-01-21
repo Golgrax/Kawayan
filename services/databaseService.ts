@@ -670,6 +670,56 @@ async loginUser(email: string, password: string): Promise<{ user: User; token: s
     }
   }
 
+  // --- Active Calls ---
+  async registerCall(userId: string, userEmail: string, roomName: string, reason?: string): Promise<void> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      logger.info('Registering active call', { userId, userEmail, roomName, reason });
+      db.prepare(`
+        INSERT OR REPLACE INTO active_calls (user_id, user_email, room_name, reason)
+        VALUES (?, ?, ?, ?)
+      `).run(userId, userEmail, roomName, reason || null);
+    } catch (error) {
+      console.error('Error registering call:', error);
+      throw error;
+    }
+  }
+
+  async unregisterCall(userId: string, agentId?: string): Promise<void> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      logger.info('Unregistering active call', { userId });
+      
+      // Get call info before deleting to log it
+      const call = db.prepare('SELECT * FROM active_calls WHERE user_id = ?').get(userId) as any;
+      if (call) {
+        const endedAt = new Date().toISOString();
+        const startedAt = new Date(call.started_at).getTime();
+        const duration = Math.floor((Date.now() - startedAt) / 1000);
+        
+        db.prepare(`
+          INSERT INTO call_history (id, user_id, user_email, reason, started_at, duration_seconds, agent_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(Date.now().toString(), userId, call.user_email, call.reason, call.started_at, duration, agentId || null);
+      }
+
+      db.prepare('DELETE FROM active_calls WHERE user_id = ?').run(userId);
+    } catch (error) {
+      console.error('Error unregistering call:', error);
+      throw error;
+    }
+  }
+
+  async getActiveCalls(): Promise<any[]> {
+    const db = this.dbConfig.getDatabase();
+    try {
+      return db.prepare('SELECT * FROM active_calls ORDER BY started_at ASC').all();
+    } catch (error) {
+      console.error('Error getting active calls:', error);
+      return [];
+    }
+  }
+
   // --- Admin Stats ---
   async getAdminStats(): Promise<{
     totalUsers: number;
