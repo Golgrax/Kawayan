@@ -20,7 +20,8 @@ const callLocalAI = async (prompt: string, system?: string): Promise<string> => 
         ],
         stream: false,
         options: {
-          temperature: 0.5
+          temperature: 0.7,
+          top_p: 0.95,
         }
       })
     });
@@ -45,7 +46,11 @@ const callGeminiDirect = async (prompt: string, model: string = 'gemini-1.5-flas
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 1000 }
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 1000,
+        response_mime_type: "application/json",
+      }
     })
   });
 
@@ -89,23 +94,57 @@ const generateWithFallback = async (prompt: string) => {
 };
 
 export const generateContentPlan = async (profile: BrandProfile, month: string): Promise<ContentIdea[]> => {
-  const prompt = `Create a 7-item social media calendar for ${month} for "${profile.businessName}" (${profile.industry}) in Taglish. Return ONLY a JSON array with properties: day, title, topic, format.`;
+    const prompt = `
+    Analyze the following brand profile:
+    - Business Name: ${profile.businessName}
+    - Industry: ${profile.industry}
+    - Target Audience: ${profile.targetAudience}
+    - Brand Voice: ${profile.brandVoice}
+    - Key Themes: ${profile.keyThemes}
+
+    Based on this profile, create a 7-item social media content plan for the month of ${month}.
+    The plan should be diverse and align with the brand's voice and goals.
+    The output must be ONLY a valid JSON array of objects, where each object has the following properties: "day" (number), "title" (string), "topic" (string, a detailed and engaging post idea), and "format" (string, e.g., "Image", "Video", "Carousel").
+    Ensure the topics are specific, creative, and tailored to the brand. For example, instead of "Promote product", suggest "Behind-the-scenes look at how [Product Name] is made".
+    The language of the 'title' and 'topic' should be in Taglish (a mix of Tagalog and English) or Filipino, and should match the specified 'Brand Voice'.
+  `;
   try {
+    logger.info("Generating content plan with prompt:", prompt);
     const res = await generateWithFallback(prompt);
-    const jsonStr = res.match(/.*\]/s)?.[0] || res;
-    return ValidationService.validateContentIdeas(JSON.parse(jsonStr));
-  } catch (e) {
+    logger.info("Received response from AI for content plan:", res);
+    return ValidationService.validateContentIdeas(JSON.parse(res));
+  } catch (e: any) {
+    logger.error("Error generating content plan:", e.message);
     return ValidationService.createFallbackContentIdeas(month);
   }
 };
 
 export const generatePostCaptionAndImagePrompt = async (profile: BrandProfile, topic: string): Promise<any> => {
-  const prompt = `Write a social media post for "${topic}" for business "${profile.businessName}". Return ONLY JSON with: caption (Taglish), imagePrompt (English), viralityScore (0-100), viralityReason.`;
+  const prompt = `
+    As an expert social media manager for the brand "${profile.businessName}", generate a post about the topic: "${topic}".
+
+    Adhere to the brand's identity:
+    - Business Name: ${profile.businessName}
+    - Industry: ${profile.industry}
+    - Target Audience: ${profile.targetAudience}
+    - Brand Voice: ${profile.brandVoice}
+    - Key Themes: ${profile.keyThemes}
+
+    Instructions:
+    1.  **Caption:** Write a compelling, engaging, and creative social media caption in Taglish (a mix of Tagalog and English) or Filipino. It must align with the brand's voice.
+    2.  **Image Prompt:** Create a detailed, descriptive English prompt for an AI image generator (like Midjourney or DALL-E) to create a visually stunning and relevant image for the post. The prompt should be specific, including details about subject, style, lighting, and composition.
+    3.  **Virality Score:** Estimate a virality score from 0 to 100, where 100 is most likely to go viral.
+    4.  **Virality Reason:** Briefly explain in English why you gave that score, based on factors like emotional appeal, relevance, or shareability.
+
+    The output must be ONLY a single, valid JSON object with the following keys: "caption", "imagePrompt", "viralityScore", "viralityReason".
+  `;
   try {
+    logger.info("Generating post with prompt:", prompt);
     const res = await generateWithFallback(prompt);
-    const jsonStr = res.match(/.*\}/s)?.[0] || res;
-    return ValidationService.validatePostResponse(JSON.parse(jsonStr));
-  } catch (e) {
+    logger.info("Received response from AI for post:", res);
+    return ValidationService.validatePostResponse(JSON.parse(res));
+  } catch (e: any) {
+    logger.error("Error generating post caption and image prompt:", e.message);
     return ValidationService.createFallbackPostResponse(topic);
   }
 };
@@ -118,7 +157,7 @@ export const getTrendingTopicsPH = async (industry?: string): Promise<string[]> 
   const prompt = `List 5 trending topics in the Philippines for ${industry || 'general'} industry. Return ONLY a JSON string array.`;
   try {
     const res = await generateWithFallback(prompt);
-    const jsonStr = res.match(/.*\]/s)?.[0] || res;
+    const jsonStr = res.match(/.*]/s)?.[0] || res;
     return ValidationService.validateTrendingTopics(JSON.parse(jsonStr));
   } catch (error) {
     return ValidationService.createFallbackTrendingTopics();

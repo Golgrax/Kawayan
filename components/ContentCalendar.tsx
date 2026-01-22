@@ -130,11 +130,20 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
 
   const handleGeneratePlan = async () => {
     setLoadingPlan(true);
-    const monthName = currentDate.toLocaleString('default', { month: 'long' });
-    const newIdeas = await generateContentPlan(profile, monthName);
-    setIdeas(newIdeas);
-    await dbService.savePlan(userId, monthName, newIdeas);
-    setLoadingPlan(false);
+    try {
+      const monthName = currentDate.toLocaleString('default', { month: 'long' });
+      const newIdeas = await generateContentPlan(profile, monthName);
+      setIdeas(newIdeas);
+      await dbService.savePlan(userId, monthName, newIdeas);
+    } catch (e: any) {
+      if (e.message.includes('quota')) {
+        alert("You have exceeded your daily quota for the Gemini API. Please wait for it to reset or upgrade to a paid plan.");
+      } else {
+        alert(`Failed to generate content plan. Please try again.\n\nError: ${e.message}`);
+      }
+    } finally {
+      setLoadingPlan(false);
+    }
   };
 
   const handleDayClick = (day: number) => {
@@ -208,8 +217,12 @@ const ContentCalendar: React.FC<Props> = ({ profile, userId }) => {
           };
         }
       });
-    } catch (e) {
-      alert("Failed to generate content. Please try again.");
+    } catch (e: any) {
+      if (e.message.includes('quota')) {
+        alert("You have exceeded your daily quota for the Gemini API. Please wait for it to reset or upgrade to a paid plan.");
+      } else {
+        alert(`Failed to generate content. Please try again.\n\nError: ${e.message}`);
+      }
     } finally {
       setGeneratingPost(false);
     }
