@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MessageCircle, X, Send, Phone, FileText, Loader2, ArrowLeft, Bot, Headset } from 'lucide-react';
+import { MessageCircle, X, Send, Phone, FileText, Loader2, ArrowLeft, Bot, Headset, Brain, ChevronDown, ChevronUp } from 'lucide-react';
 import { chatWithSupportBot } from '../services/geminiService';
 import { supportService } from '../services/supportService';
 import CallOverlay from './CallOverlay';
@@ -19,6 +19,21 @@ const SupportWidget: React.FC = () => {
   const [chatHistory, setChatHistory] = useState<{sender: 'user'|'bot'|'system'|'agent', text: string, timestamp?: string}[]>([]);
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
   const [sessionCallId, setSessionCallId] = useState<string>('');
+  const [expandedThinking, setExpandedThinking] = useState<{[key: number]: boolean}>({});
+
+  const parseThinking = (text: string) => {
+    const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/);
+    if (thinkMatch) {
+      const reasoning = thinkMatch[1].trim();
+      const content = text.replace(/<think>[\s\S]*?<\/think>/, '').trim();
+      return { reasoning, content };
+    }
+    return { reasoning: null, content: text };
+  };
+
+  const toggleThinking = (idx: number) => {
+    setExpandedThinking(prev => ({...prev, [idx]: !prev[idx]}));
+  };
 
   useEffect(() => {
     // Generate a fresh random 4-digit ID for this session
@@ -217,21 +232,43 @@ const SupportWidget: React.FC = () => {
                         <p className="text-xs">Ask me anything about your business!</p>
                       </div>
                     )}
-                    {chatHistory.map((msg, idx) => (
-                      <div key={idx} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs ${
-                          msg.sender === 'user' 
-                            ? 'bg-emerald-600 text-white rounded-br-none' 
-                            : msg.sender === 'system'
-                            ? 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 italic text-center w-full'
-                            : msg.sender === 'agent'
-                            ? 'bg-slate-900 dark:bg-emerald-700 text-white rounded-bl-none shadow-md border-l-4 border-emerald-400'
-                            : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 rounded-bl-none shadow-sm'
-                        }`}>
-                          {msg.text}
+                    {chatHistory.map((msg, idx) => {
+                      const { reasoning, content } = parseThinking(msg.text);
+                      const isExpanded = expandedThinking[idx];
+
+                      return (
+                        <div key={idx} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'} gap-1`}>
+                          {reasoning && (
+                            <div className="flex flex-col items-start max-w-[85%]">
+                              <button 
+                                onClick={() => toggleThinking(idx)}
+                                className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] text-slate-500 hover:text-emerald-600 transition-colors border border-slate-200 dark:border-slate-700"
+                              >
+                                <Brain className="w-3 h-3" />
+                                <span>AI Thinking...</span>
+                                {isExpanded ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
+                              </button>
+                              {isExpanded && (
+                                <div className="mt-1 p-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] text-slate-500 italic leading-relaxed animate-in fade-in slide-in-from-top-1">
+                                  {reasoning}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs ${
+                            msg.sender === 'user' 
+                              ? 'bg-emerald-600 text-white rounded-br-none' 
+                              : msg.sender === 'system'
+                              ? 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 italic text-center w-full'
+                              : msg.sender === 'agent'
+                              ? 'bg-slate-900 dark:bg-emerald-700 text-white rounded-bl-none shadow-md border-l-4 border-emerald-400'
+                              : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 rounded-bl-none shadow-sm'
+                          }`}>
+                            {content}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {isTyping && (
                       <div className="flex justify-start">
                         <div className="bg-white dark:bg-slate-700 p-2 rounded-2xl rounded-bl-none shadow-sm border border-slate-200 dark:border-slate-600">

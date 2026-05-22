@@ -1086,6 +1086,35 @@ app.post('/api/ai/local', async (req, res) => {
   }
 });
 
+// --- Unsloth AI Proxy ---
+app.post('/api/ai/unsloth', async (req, res) => {
+  try {
+    const url = process.env.UNSLOTH_API_URL || 'https://sharp-spies-doubt.loca.lt/v1/chat/completions';
+    const token = process.env.UNSLOTH_API_KEY || 'sk-unsloth-2ac78b9fd6f6d5f70b0b3f752a73ba60';
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'Bypass-Tunnel-Reminder': 'true'
+      },
+      body: JSON.stringify(req.body)
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Unsloth API Error: ${response.status} - ${errText}`);
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error("Unsloth AI Proxy failed:", error);
+    res.status(503).json({ error: "Unsloth AI currently unavailable" });
+  }
+});
+
 // API 404 Handler - Must be before the React catch-all
 
 
