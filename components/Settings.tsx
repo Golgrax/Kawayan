@@ -4,6 +4,7 @@ import { Save, User as UserIcon, MessageCircle, Target, Briefcase, Moon, Sun, Mo
 import { paymentService, Wallet } from '../services/paymentService';
 import UniversalDatabaseService from '../services/universalDatabaseService';
 import { ValidationService } from '../services/validationService';
+import { useOrganicDialog } from './OrganicDialog';
 
 interface Props {
   profile?: BrandProfile | null;
@@ -16,6 +17,7 @@ interface Props {
 }
 
 const Settings: React.FC<Props> = ({ profile, user, onProfileUpdate, onUserUpdate, darkMode, toggleDarkMode, onClose }) => {
+  const dialog = useOrganicDialog();
   const [formData, setFormData] = useState<BrandProfile>({
     userId: user?.id || '',
     businessName: profile?.businessName || '',
@@ -74,7 +76,7 @@ const Settings: React.FC<Props> = ({ profile, user, onProfileUpdate, onUserUpdat
       setTimeout(() => setSaved(false), 2000);
     } catch (error) {
       console.error("Failed to save settings:", error);
-      alert("Failed to save settings. Please try again.");
+      await dialog.alert("Failed to save settings. Please try again.");
     }
   };
 
@@ -123,7 +125,8 @@ const Settings: React.FC<Props> = ({ profile, user, onProfileUpdate, onUserUpdat
   };
 
   const handleCancelSubscription = async () => {
-    if (window.confirm("Are you sure you want to cancel your Pro plan? You will lose access to premium features at the end of the billing cycle.")) {
+    const confirmed = await dialog.confirm("Are you sure you want to cancel your Pro plan? You will lose access to premium features at the end of the billing cycle.");
+    if (confirmed) {
       await paymentService.cancelSubscription();
       const updated = await paymentService.getWalletData();
       setWallet(updated);
@@ -134,25 +137,26 @@ const Settings: React.FC<Props> = ({ profile, user, onProfileUpdate, onUserUpdat
     if (!wallet) return;
     const cost = 499;
     if (wallet.balance < cost) {
-      alert("Insufficient balance. Please top up in the Billing section.");
+      await dialog.alert("Insufficient balance. Please top up in the Billing section.");
       return;
     }
 
-    if (window.confirm(`Upgrade to PRO for ₱${cost}/mo?`)) {
+    const confirmed = await dialog.confirm(`Upgrade to PRO for ₱${cost}/mo?`);
+    if (confirmed) {
       try {
         await paymentService.purchaseSubscription('PRO', cost);
         const updated = await paymentService.getWalletData();
         setWallet(updated);
-        alert("Upgrade Successful! Welcome to Pro.");
+        await dialog.alert({ message: "Upgrade Successful! Welcome to Pro.", title: "Welcome to Pro" });
       } catch (e: any) {
-        alert(e.message);
+        await dialog.alert(e.message);
       }
     }
   };
 
-  const handleDownloadInvoices = () => {
+  const handleDownloadInvoices = async () => {
     if (!wallet || wallet.transactions.length === 0) {
-      alert("No transactions found.");
+      await dialog.alert("No transactions found.");
       return;
     }
     const headers = "Date,ID,Description,Status,Amount\n";
@@ -168,74 +172,75 @@ const Settings: React.FC<Props> = ({ profile, user, onProfileUpdate, onUserUpdat
     a.click();
   };
 
+  const tabs = [
+    ...(user?.role !== 'support' ? [{ id: 'profile' as const, label: 'Brand Profile' }] : []),
+    { id: 'account' as const, label: 'Account' },
+    ...(user?.role !== 'support' ? [{ id: 'billing' as const, label: 'Billing' }] : []),
+  ];
+
+  const fieldLabel = 'block text-sm font-semibold mb-1.5';
+  const labelStyle = { color: 'var(--fg)' };
+
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-4">
+    <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
+
+      <div className="page-head">
+        <div className="flex items-center gap-3">
           {onClose && (
-            <button 
+            <button
               onClick={onClose}
-              className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition"
-              title="Go Back"
+              className="btn btn-ghost btn-sm !p-2"
+              title="Go back"
             >
-              <ArrowLeft className="w-6 h-6" />
+              <ArrowLeft className="w-5 h-5" />
             </button>
           )}
           <div>
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Settings</h1>
-            <p className="text-slate-500 dark:text-slate-400">Manage your brand preferences and app experience.</p>
+            <h1 className="page-head__title">Settings</h1>
+            <p className="page-head__sub">Manage your brand preferences and experience.</p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Navigation Sidebar */}
-        <div className="md:col-span-1 space-y-4">
-           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4">
-              <h3 className="font-bold text-slate-800 dark:text-white mb-4 px-2">Preferences</h3>
-              <nav className="space-y-1">
-                 {user?.role !== 'support' && (
-                   <button 
-                     onClick={() => setActiveTab('profile')}
-                     className={`w-full text-left px-3 py-2 font-medium rounded-lg transition ${activeTab === 'profile' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+        <div className="md:col-span-1 space-y-3">
+           <div className="surface p-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] mb-2 px-2" style={{ color: 'var(--fg-subtle)' }}>Preferences</p>
+              <nav className="space-y-0.5">
+                 {tabs.map((t) => (
+                   <button
+                     key={t.id}
+                     onClick={() => setActiveTab(t.id)}
+                     className={`w-full text-left px-3 py-2.5 text-sm font-semibold rounded-[var(--r)] transition ${activeTab === t.id ? 'nav-item-active' : 'btn-ghost'}`}
                    >
-                     Brand Profile
+                     {t.label}
                    </button>
-                 )}
-                 <button 
-                   onClick={() => setActiveTab('account')}
-                   className={`w-full text-left px-3 py-2 font-medium rounded-lg transition ${activeTab === 'account' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-                 >
-                   Account
-                 </button>
-                 {user?.role !== 'support' && (
-                   <button 
-                     onClick={() => setActiveTab('billing')}
-                     className={`w-full text-left px-3 py-2 font-medium rounded-lg transition ${activeTab === 'billing' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-                   >
-                     Billing
-                   </button>
-                 )}
+                 ))}
               </nav>
            </div>
 
            {/* Theme Toggle Card */}
-           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-              <h3 className="font-bold text-slate-800 dark:text-white mb-2">Appearance</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Choose your interface theme.</p>
-              <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-900 rounded-lg">
-                 <button 
-                   onClick={() => darkMode && toggleDarkMode()} 
-                   className={`flex-1 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition ${!darkMode ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-300'}`}
+           <div className="surface p-5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--fg-subtle)' }}>Appearance</p>
+              <div className="flex gap-1 p-1 rounded-[var(--r)] border" style={{ background: 'var(--bg-alt)', borderColor: 'var(--border)' }}>
+                 <button
+                   onClick={() => darkMode && toggleDarkMode()}
+                   className="flex-1 py-2 rounded-[var(--r-sm)] text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                   style={!darkMode
+                     ? { background: 'var(--card)', boxShadow: 'var(--shadow-xs)', color: 'var(--fg)' }
+                     : { color: 'var(--fg-subtle)' }}
                  >
-                   <Sun className="w-4 h-4"/> Light
+                   <Sun className="w-3.5 h-3.5"/> Light
                  </button>
-                 <button 
+                 <button
                    onClick={() => !darkMode && toggleDarkMode()}
-                   className={`flex-1 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition ${darkMode ? 'bg-slate-700 shadow text-white' : 'text-slate-500 hover:text-slate-700'}`}
+                   className="flex-1 py-2 rounded-[var(--r-sm)] text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                   style={darkMode
+                     ? { background: 'var(--card)', boxShadow: 'var(--shadow-xs)', color: 'var(--fg)' }
+                     : { color: 'var(--fg-subtle)' }}
                  >
-                   <Moon className="w-4 h-4"/> Dark
+                   <Moon className="w-3.5 h-3.5"/> Dark
                  </button>
               </div>
            </div>
@@ -244,57 +249,57 @@ const Settings: React.FC<Props> = ({ profile, user, onProfileUpdate, onUserUpdat
         {/* Main Content Area */}
         <div className="md:col-span-2">
            {activeTab === 'profile' && (
-             <form onSubmit={handleSaveProfile} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 sm:p-8 space-y-6">
-                
-                <div className="flex items-center gap-3 pb-4 border-b border-slate-100 dark:border-slate-700">
-                   <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg">
+             <form onSubmit={handleSaveProfile} className="surface p-6 sm:p-8 space-y-6">
+
+                <div className="flex items-center gap-3 pb-4 border-b" style={{ borderColor: 'var(--border)' }}>
+                   <div className="w-10 h-10 rounded-[var(--r)] flex items-center justify-center shrink-0" style={{ background: 'var(--kw-green-pale)', color: 'var(--primary)' }}>
                       <UserIcon className="w-5 h-5"/>
                    </div>
                    <div>
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">Brand Identity</h3>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">This info guides the AI to write like you.</p>
+                      <h3 className="font-display text-lg font-semibold" style={{ color: 'var(--fg)' }}>Brand identity</h3>
+                      <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>This info guides the AI to write like you.</p>
                    </div>
                 </div>
 
                 <div className="space-y-4">
                    <div>
-                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Business Name</label>
-                      <input 
-                        type="text" 
+                      <label className={fieldLabel} style={labelStyle}>Business name</label>
+                      <input
+                        type="text"
                         value={formData.businessName}
                         onChange={(e) => handleChange('businessName', e.target.value)}
-                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition"
+                        className="input"
                       />
                    </div>
 
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2"><Briefcase className="w-3 h-3"/> Industry</label>
-                         <input 
-                           type="text" 
+                         <label className={`${fieldLabel} flex items-center gap-2`} style={labelStyle}><Briefcase className="w-3.5 h-3.5"/> Industry</label>
+                         <input
+                           type="text"
                            value={formData.industry}
                            onChange={(e) => handleChange('industry', e.target.value)}
-                           className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition"
+                           className="input"
                          />
                       </div>
                       <div>
-                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2"><Target className="w-3 h-3"/> Target Audience</label>
-                         <input 
-                           type="text" 
+                         <label className={`${fieldLabel} flex items-center gap-2`} style={labelStyle}><Target className="w-3.5 h-3.5"/> Target audience</label>
+                         <input
+                           type="text"
                            value={formData.targetAudience}
                            onChange={(e) => handleChange('targetAudience', e.target.value)}
-                           className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition"
+                           className="input"
                          />
                       </div>
                    </div>
 
                    <div>
-                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2"><MessageCircle className="w-3 h-3"/> Brand Voice</label>
-                      <input 
-                        type="text" 
+                      <label className={`${fieldLabel} flex items-center gap-2`} style={labelStyle}><MessageCircle className="w-3.5 h-3.5"/> Brand voice</label>
+                      <input
+                        type="text"
                         value={formData.brandVoice}
                         onChange={(e) => handleChange('brandVoice', e.target.value)}
-                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition"
+                        className="input"
                         placeholder="e.g. Fun, Professional, Friendly"
                       />
                    </div>
@@ -302,24 +307,23 @@ const Settings: React.FC<Props> = ({ profile, user, onProfileUpdate, onUserUpdat
                    {/* Brand Colors & Contact */}
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                         <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Brand Colors (Hex)</label>
+                         <label className={fieldLabel} style={labelStyle}>Brand colors (hex)</label>
                          <div className="flex gap-2">
                            {[0,1,2].map(i => {
-                             // Ensure we have a valid color string for this index
                              const currentColor = (formData.brandColors && formData.brandColors[i]) || '#10b981';
                              return (
                                <div key={i} className="flex items-center gap-1">
-                                 <input 
+                                 <input
                                    type="color"
                                    value={currentColor}
                                    onChange={(e) => {
                                      const newColors = [...(formData.brandColors || ['#10b981', '#3b82f6', '#f59e0b'])];
-                                     // Fill slots if they don't exist
                                      while (newColors.length <= i) newColors.push('#000000');
                                      newColors[i] = e.target.value;
                                      handleChange('brandColors', newColors);
                                    }}
-                                   className="w-8 h-8 rounded cursor-pointer border-0 p-0 overflow-hidden"
+                                   className="w-9 h-9 rounded-[var(--r-sm)] cursor-pointer border p-0 overflow-hidden"
+                                   style={{ borderColor: 'var(--border-strong)' }}
                                  />
                                </div>
                              );
@@ -327,106 +331,103 @@ const Settings: React.FC<Props> = ({ profile, user, onProfileUpdate, onUserUpdat
                          </div>
                       </div>
                       <div className="space-y-2">
-                         <input 
-                           type="email" 
+                         <input
+                           type="email"
                            value={formData.contactEmail || ''}
                            onChange={(e) => handleChange('contactEmail', e.target.value)}
-                           placeholder="Contact Email"
-                           className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                           placeholder="Contact email"
+                           className="input"
                          />
-                         <input 
-                           type="tel" 
+                         <input
+                           type="tel"
                            value={formData.contactPhone || ''}
                            onChange={(e) => handleChange('contactPhone', e.target.value)}
-                           placeholder="Contact Phone"
-                           className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                           placeholder="Contact phone"
+                           className="input"
                          />
                       </div>
                    </div>
 
                    <div>
-                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Content Themes (Topics)</label>
-                      <textarea 
+                      <label className={fieldLabel} style={labelStyle}>Content themes (topics)</label>
+                      <textarea
                         value={formData.keyThemes}
                         onChange={(e) => handleChange('keyThemes', e.target.value)}
                         rows={4}
-                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition resize-none"
+                        className="input resize-none"
                       />
                    </div>
                 </div>
 
-                <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-end">
-                   <button 
-                     type="submit"
-                     className={`px-6 py-2.5 rounded-lg font-bold text-white flex items-center gap-2 transition transform active:scale-95 ${saved ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-700'}`}
-                   >
-                     {saved ? 'Changes Saved!' : 'Save Changes'} <Save className="w-4 h-4"/>
+                <div className="pt-4 border-t flex justify-end" style={{ borderColor: 'var(--border)' }}>
+                   <button type="submit" className="btn btn-primary">
+                     {saved ? 'Changes saved' : 'Save changes'} <Save className="w-4 h-4"/>
                    </button>
                 </div>
              </form>
            )}
 
            {activeTab === 'account' && (
-             <form onSubmit={handleUpdatePassword} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 sm:p-8 space-y-6">
-                <div className="flex items-center gap-3 pb-4 border-b border-slate-100 dark:border-slate-700">
-                   <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg">
+             <form onSubmit={handleUpdatePassword} className="surface p-6 sm:p-8 space-y-6">
+                <div className="flex items-center gap-3 pb-4 border-b" style={{ borderColor: 'var(--border)' }}>
+                   <div className="w-10 h-10 rounded-[var(--r)] flex items-center justify-center shrink-0" style={{ background: 'var(--kw-green-pale)', color: 'var(--primary)' }}>
                       <Lock className="w-5 h-5"/>
                    </div>
                    <div>
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">Security & Login</h3>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">Update your account credentials.</p>
+                      <h3 className="font-display text-lg font-semibold" style={{ color: 'var(--fg)' }}>Security &amp; login</h3>
+                      <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>Update your account credentials.</p>
                    </div>
                 </div>
 
                 <div className="space-y-4">
                    <div>
-                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
-                      <input 
-                        type="email" 
-                        value={user?.email || ''} 
+                      <label className={fieldLabel} style={labelStyle}>Email address</label>
+                      <input
+                        type="email"
+                        value={user?.email || ''}
                         disabled
-                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                        className="input opacity-60 cursor-not-allowed"
                       />
-                      <p className="text-xs text-slate-400 mt-1">Email cannot be changed.</p>
+                      <p className="text-xs mt-1" style={{ color: 'var(--fg-subtle)' }}>Email cannot be changed.</p>
                    </div>
 
-                   <hr className="border-slate-100 dark:border-slate-700 my-4"/>
+                   <hr className="divider my-4"/>
 
                    <div>
-                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Current Password</label>
-                      <input 
-                        type="password" 
+                      <label className={fieldLabel} style={labelStyle}>Current password</label>
+                      <input
+                        type="password"
                         value={accountForm.currentPassword}
                         onChange={(e) => setAccountForm({...accountForm, currentPassword: e.target.value})}
-                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                        className="input"
                       />
                    </div>
                    <div>
-                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">New Password</label>
-                      <input 
-                        type="password" 
+                      <label className={fieldLabel} style={labelStyle}>New password</label>
+                      <input
+                        type="password"
                         value={accountForm.newPassword}
                         onChange={(e) => setAccountForm({...accountForm, newPassword: e.target.value})}
-                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                        className="input"
                       />
                    </div>
                    <div>
-                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Confirm New Password</label>
-                      <input 
-                        type="password" 
+                      <label className={fieldLabel} style={labelStyle}>Confirm new password</label>
+                      <input
+                        type="password"
                         value={accountForm.confirmPassword}
                         onChange={(e) => setAccountForm({...accountForm, confirmPassword: e.target.value})}
-                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                        className="input"
                       />
                    </div>
                 </div>
 
                 {validationErrors.length > 0 && (
-                  <div className="bg-rose-50 dark:bg-rose-900/20 p-3 rounded-lg border border-rose-100 dark:border-rose-900/30">
-                    <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 text-sm font-bold mb-1">
-                      <AlertTriangle className="w-4 h-4" /> Password Requirements:
+                  <div className="p-3 rounded-[var(--r)] border" style={{ background: 'color-mix(in srgb, var(--danger) 8%, transparent)', borderColor: 'color-mix(in srgb, var(--danger) 24%, transparent)' }}>
+                    <div className="flex items-center gap-2 text-sm font-bold mb-1" style={{ color: 'var(--danger)' }}>
+                      <AlertTriangle className="w-4 h-4" /> Password requirements
                     </div>
-                    <ul className="list-disc list-inside text-xs text-rose-500 dark:text-rose-300 space-y-1">
+                    <ul className="list-disc list-inside text-xs space-y-1" style={{ color: 'var(--danger)' }}>
                       {validationErrors.map((err, i) => (
                         <li key={i}>{err}</li>
                       ))}
@@ -435,65 +436,61 @@ const Settings: React.FC<Props> = ({ profile, user, onProfileUpdate, onUserUpdat
                 )}
 
                 {error && (
-                  <div className="p-3 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 text-sm rounded-lg flex items-center gap-2">
+                  <div className="p-3 rounded-[var(--r)] text-sm flex items-center gap-2 border" style={{ background: 'color-mix(in srgb, var(--danger) 8%, transparent)', borderColor: 'color-mix(in srgb, var(--danger) 24%, transparent)', color: 'var(--danger)' }}>
                     <AlertTriangle className="w-4 h-4"/> {error}
                   </div>
                 )}
 
-                <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-end">
-                   <button 
-                     type="submit"
-                     className={`px-6 py-2.5 rounded-lg font-bold text-white flex items-center gap-2 transition ${saved ? 'bg-green-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-                   >
-                     {saved ? 'Updated!' : 'Update Password'} <Save className="w-4 h-4"/>
+                <div className="pt-4 border-t flex justify-end" style={{ borderColor: 'var(--border)' }}>
+                   <button type="submit" className="btn btn-primary">
+                     {saved ? 'Updated' : 'Update password'} <Save className="w-4 h-4"/>
                    </button>
                 </div>
              </form>
            )}
 
            {activeTab === 'billing' && wallet && (
-             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 sm:p-8 space-y-6 animate-in fade-in">
-                <div className="flex items-center gap-3 pb-4 border-b border-slate-100 dark:border-slate-700">
-                   <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg">
+             <div className="surface p-6 sm:p-8 space-y-6 animate-fade-in">
+                <div className="flex items-center gap-3 pb-4 border-b" style={{ borderColor: 'var(--border)' }}>
+                   <div className="w-10 h-10 rounded-[var(--r)] flex items-center justify-center shrink-0" style={{ background: 'var(--kw-green-pale)', color: 'var(--primary)' }}>
                       <CreditCard className="w-5 h-5"/>
                    </div>
                    <div>
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">Subscription Status</h3>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">Manage your plan and billing details.</p>
+                      <h3 className="font-display text-lg font-semibold" style={{ color: 'var(--fg)' }}>Subscription status</h3>
+                      <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>Manage your plan and billing details.</p>
                    </div>
                 </div>
 
-                <div className="bg-slate-50 dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
-                   <div className="flex justify-between items-start">
+                <div className="rounded-[var(--r-lg)] p-6 border" style={{ background: 'var(--bg-alt)', borderColor: 'var(--border)' }}>
+                   <div className="flex justify-between items-start gap-3">
                       <div>
-                         <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Current Plan</p>
-                         <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-                           {wallet.subscription} 
-                           {wallet.subscription === 'PRO' && <span className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 text-xs px-2 py-1 rounded-full font-bold">ACTIVE</span>}
+                         <p className="text-[11px] font-bold uppercase tracking-[0.1em] mb-1" style={{ color: 'var(--fg-muted)' }}>Current plan</p>
+                         <h2 className="font-display text-2xl font-semibold flex items-center gap-2" style={{ color: 'var(--fg)' }}>
+                           {wallet.subscription}
+                           {wallet.subscription === 'PRO' && <span className="badge badge-green">Active</span>}
                          </h2>
-                         <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                         <p className="text-sm mt-2" style={{ color: 'var(--fg-muted)' }}>
                            {wallet.subscription === 'FREE' ? 'Upgrade to Pro for more features.' : 'Next billing date: Feb 14, 2026'}
                          </p>
                       </div>
-                      <div className="text-right">
-                         <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Wallet Balance</p>
-                         <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">₱{wallet.balance.toFixed(2)}</p>
+                      <div className="text-right shrink-0">
+                         <p className="text-[11px] font-bold uppercase tracking-[0.1em] mb-1" style={{ color: 'var(--fg-muted)' }}>Wallet balance</p>
+                         <p className="font-display text-xl font-semibold" style={{ color: 'var(--primary)' }}>₱{wallet.balance.toFixed(2)}</p>
                       </div>
                    </div>
 
                    {wallet.subscription === 'PRO' && (
-                     <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
-                       <h4 className="text-sm font-bold text-slate-800 dark:text-white mb-2">Plan Benefits</h4>
+                     <div className="mt-6 pt-6 border-t" style={{ borderColor: 'var(--border)' }}>
+                       <h4 className="text-sm font-bold mb-2" style={{ color: 'var(--fg)' }}>Plan benefits</h4>
                        <ul className="space-y-2 mb-6">
-                         <li className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><CheckCircle className="w-4 h-4 text-emerald-500"/> 16 Auto-Generated Posts</li>
-                         <li className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><CheckCircle className="w-4 h-4 text-emerald-500"/> Advanced Analytics</li>
-                         <li className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><CheckCircle className="w-4 h-4 text-emerald-500"/> Priority Support</li>
+                         {['16 auto-generated posts', 'Advanced analytics', 'Priority support'].map((b) => (
+                           <li key={b} className="flex items-center gap-2 text-sm" style={{ color: 'var(--fg-muted)' }}>
+                             <CheckCircle className="w-4 h-4" style={{ color: 'var(--success)' }}/> {b}
+                           </li>
+                         ))}
                        </ul>
-                       <button 
-                         onClick={handleCancelSubscription}
-                         className="text-rose-600 hover:text-rose-700 text-sm font-medium hover:underline"
-                       >
-                         Cancel Subscription
+                       <button onClick={handleCancelSubscription} className="btn btn-danger btn-sm">
+                         Cancel subscription
                        </button>
                      </div>
                    )}
@@ -501,18 +498,12 @@ const Settings: React.FC<Props> = ({ profile, user, onProfileUpdate, onUserUpdat
 
                 <div className="flex justify-end gap-3">
                    {wallet.subscription === 'FREE' && (
-                     <button 
-                       onClick={handleUpgrade}
-                       className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition"
-                     >
+                     <button onClick={handleUpgrade} className="btn btn-primary">
                        Upgrade to Pro
                      </button>
                    )}
-                   <button 
-                     onClick={handleDownloadInvoices}
-                     className="px-4 py-2 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition"
-                   >
-                     View Invoices
+                   <button onClick={handleDownloadInvoices} className="btn btn-outline">
+                     View invoices
                    </button>
                 </div>
              </div>

@@ -1,5 +1,6 @@
 import { User, BrandProfile, GeneratedPost } from '../types';
 import { logger } from '../utils/logger';
+import { clearAuthSession, isAuthResponse, fetchWithRetry, normalizeEmail, sanitizeUserForSession } from '../utils/authSession';
 
 export class ClientDatabaseService {
   private baseUrl = '/api';
@@ -13,22 +14,40 @@ export class ClientDatabaseService {
   }
 
   // --- Users (Auth) ---
-  async createUser(email: string, password: string, role: 'user' | 'admin' = 'user', businessName?: string): Promise<User | null> {
+  async createUser(
+    email: string,
+    password: string,
+    role: 'user' | 'admin' = 'user',
+    businessName?: string,
+    options?: { acceptedTerms?: boolean; termsVersion?: string }
+  ): Promise<User | null> {
     try {
       const response = await fetch(`${this.baseUrl}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, role, businessName })
+        body: JSON.stringify({
+          email: normalizeEmail(email),
+          password,
+          role,
+          businessName,
+          acceptedTerms: options?.acceptedTerms,
+          termsVersion: options?.termsVersion,
+        })
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || errorData.message || 'Registration failed');
       }
 
-      const { user, token } = await response.json();
+      const data = await response.json();
+      const user = sanitizeUserForSession(data.user) as User;
+      const token = data.token;
+
+      if (!user?.id || !token) {
+        throw new Error('Registration succeeded but session data was incomplete.');
+      }
       
-      // Store session
       localStorage.setItem('kawayan_jwt', token);
       localStorage.setItem('kawayan_session', JSON.stringify(user));
       
@@ -41,20 +60,25 @@ export class ClientDatabaseService {
 
   async loginUser(email: string, password: string): Promise<{ user: User; token: string } | null> {
     try {
-      const response = await fetch(`${this.baseUrl}/auth/login`, {
+      const response = await fetchWithRetry(`${this.baseUrl}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email: normalizeEmail(email), password })
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || errorData.message || 'Login failed');
       }
 
-      const { user, token } = await response.json();
+      const data = await response.json();
+      const user = sanitizeUserForSession(data.user) as User;
+      const token = data.token;
+
+      if (!user?.id || !token) {
+        throw new Error('Login succeeded but session data was incomplete. Please try again.');
+      }
       
-      // Store session
       localStorage.setItem('kawayan_jwt', token);
       localStorage.setItem('kawayan_session', JSON.stringify(user));
       
@@ -130,17 +154,29 @@ export class ClientDatabaseService {
   }
 
   async getCurrentUserAsync(): Promise<User | null> {
+    const token = localStorage.getItem('kawayan_jwt');
+    if (!token) return null;
+
     try {
-      const response = await fetch(`${this.baseUrl}/auth/me`, {
-        headers: this.getHeaders()
+      const response = await fetchWithRetry(`${this.baseUrl}/auth/me`, {
+        headers: this.getHeaders(),
       });
-      if (!response.ok) return null;
+
+      if (isAuthResponse(response.status)) {
+        clearAuthSession();
+        return null;
+      }
+
+      if (!response.ok) {
+        return this.getCurrentUser();
+      }
+
       const user = await response.json();
-      // Sync local cache
       localStorage.setItem('kawayan_session', JSON.stringify(user));
       return user;
-    } catch (error) {
-      return null;
+    } catch {
+      // Network / server starting — keep cached session
+      return this.getCurrentUser();
     }
   }
 
@@ -184,6 +220,13 @@ export class ClientDatabaseService {
         headers: this.getHeaders(),
         body: JSON.stringify(post)
       });
+
+      if (response.status === 403) {
+        const body = await response.json().catch(() => ({}));
+        if (body.error === 'TIER_LIMIT_REACHED') {
+          throw new Error('TIER_LIMIT_REACHED');
+        }
+      }
 
       if (!response.ok) throw new Error('Failed to save post');
     } catch (error) {
@@ -245,6 +288,7 @@ export class ClientDatabaseService {
     pendingTransactions: number;
     revenueData: { name: string; value: number }[];
     churnData: { name: string; value: number }[];
+    retentionRate: number;
   }> {
     try {
       const query = start && end ? `?start=${start}&end=${end}` : '';
@@ -264,9 +308,32 @@ export class ClientDatabaseService {
         cancelledTransactions: 0,
         pendingTransactions: 0,
         revenueData: [],
-        churnData: []
+        churnData: [],
+        retentionRate: 0,
       };
     }
+  }
+
+  async getPendingTransactionsAdmin(): Promise<any[]> {
+    try {
+      const response = await fetch(`${this.baseUrl}/admin/pending-transactions`, {
+        headers: this.getHeaders()
+      });
+      if (!response.ok) throw new Error('Failed to fetch pending transactions');
+      return await response.json();
+    } catch (error) {
+      logger.error('Error getting pending transactions (api)', { error });
+      return [];
+    }
+  }
+
+  async approveTransactionAdmin(transactionId: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/admin/wallet/approve`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ transactionId })
+    });
+    if (!response.ok) throw new Error('Failed to approve transaction');
   }
 
   async getAuditLogs(limit: number = 100): Promise<any[]> {
@@ -359,6 +426,70 @@ export class ClientDatabaseService {
       if (!response.ok) throw new Error('Failed to update subscription');
     } catch (error) {
       logger.error('Error updating subscription (api)', { userId, error });
+      throw error;
+    }
+  }
+
+  // --- Business Verification ---
+  async getVerificationStatus(userId: string): Promise<{ status: string; rejectionReason?: string }> {
+    try {
+      const response = await fetchWithRetry(`${this.baseUrl}/verification/status/${userId}`, {
+        headers: this.getHeaders(),
+      });
+
+      if (isAuthResponse(response.status)) {
+        return { status: 'auth_required' };
+      }
+
+      if (!response.ok) {
+        logger.error('Error getting verification status (api)', { userId, status: response.status });
+        return { status: 'unavailable' };
+      }
+
+      const data = await response.json();
+      return data?.status ? data : { status: 'none' };
+    } catch (error) {
+      logger.error('Error getting verification status (api)', { userId, error });
+      return { status: 'unavailable' };
+    }
+  }
+
+  async getAllVerifications(): Promise<any[]> {
+    try {
+      const response = await fetch(`${this.baseUrl}/admin/verifications`, {
+        headers: this.getHeaders()
+      });
+      if (!response.ok) throw new Error('Failed to fetch verifications');
+      return await response.json();
+    } catch (error) {
+      logger.error('Error getting verifications (api)', { error });
+      return [];
+    }
+  }
+
+  async approveVerification(id: string): Promise<void> {
+    try {
+      const response = await fetch(`${this.baseUrl}/admin/verifications/${id}/approve`, {
+        method: 'POST',
+        headers: this.getHeaders()
+      });
+      if (!response.ok) throw new Error('Failed to approve verification');
+    } catch (error) {
+      logger.error('Error approving verification (api)', { id, error });
+      throw error;
+    }
+  }
+
+  async rejectVerification(id: string, reason: string): Promise<void> {
+    try {
+      const response = await fetch(`${this.baseUrl}/admin/verifications/${id}/reject`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ reason })
+      });
+      if (!response.ok) throw new Error('Failed to reject verification');
+    } catch (error) {
+      logger.error('Error rejecting verification (api)', { id, error });
       throw error;
     }
   }

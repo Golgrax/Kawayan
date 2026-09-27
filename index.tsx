@@ -2,7 +2,16 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { Buffer } from 'buffer';
+import 'temporal-polyfill/global';
+import './styles/accessibility.css';
 import App from './App';
+import OrganicDialogProvider from './components/OrganicDialog';
+import { ToastProvider } from './components/ui/Toast';
+import AccessibilityWidget from './components/AccessibilityWidget';
+import { initAccessibility } from './utils/accessibility';
+
+// Apply saved accessibility preferences before first paint
+initAccessibility();
 
 // Define Buffer globally for simple-peer
 if (typeof window !== 'undefined' && typeof (window as any).Buffer === 'undefined') {
@@ -18,7 +27,12 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <BrowserRouter>
-      <App />
+      <ToastProvider>
+        <OrganicDialogProvider>
+          <App />
+          <AccessibilityWidget />
+        </OrganicDialogProvider>
+      </ToastProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

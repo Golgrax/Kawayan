@@ -1,18 +1,54 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { 
   Users, RefreshCcw, ExternalLink, Heart, 
   Image as ImageIcon, UserPlus, Zap, BarChart3,
   Facebook, Instagram, MessageCircle, X, Eye, 
-  UserMinus, MousePointer2, TrendingUp
+  UserMinus, MousePointer2, TrendingUp, DollarSign
 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { socialService, SocialPlatformData } from '../services/socialService';
+import { paymentService } from '../services/paymentService';
+import { useOrganicDialog } from './OrganicDialog';
 
 const InsightsDashboard: React.FC = () => {
+  const dialog = useOrganicDialog();
   const [loading, setLoading] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [targetPlatform, setTargetPlatform] = useState<'facebook' | 'instagram' | 'tiktok' | null>(null);
   const [modalUsername, setModalUsername] = useState('');
   const [platformData, setPlatformData] = useState<SocialPlatformData[]>([]);
+  const [walletSpend, setWalletSpend] = useState(0);
+
+  const chartColors = ['#2B5748', '#4F9878', '#9CB080', '#1877F2', '#dc2743'];
+
+  const engagementChartData = useMemo(() => {
+    return platformData.map((data) => {
+      const d = data as Record<string, number | string | undefined>;
+      const reach =
+        Number(d.views || 0) +
+        Number(d.interactions || 0) +
+        Number(d.likes || 0) +
+        Number(d.followers || 0);
+      return {
+        name: String(data.platform).charAt(0).toUpperCase() + String(data.platform).slice(1),
+        reach,
+        followers: Number(d.followers || 0),
+      };
+    });
+  }, [platformData]);
+
+  const totalReach = useMemo(
+    () => engagementChartData.reduce((sum, row) => sum + row.reach, 0),
+    [engagementChartData]
+  );
+
+  const estimatedDigitalValue = totalReach * 0.05;
+  const digitalRoiPercent =
+    walletSpend > 0
+      ? Math.round(((estimatedDigitalValue - walletSpend) / walletSpend) * 100)
+      : totalReach > 0
+        ? 100
+        : 0;
 
   useEffect(() => {
     loadData();
@@ -43,6 +79,16 @@ const InsightsDashboard: React.FC = () => {
       }
     }
     setPlatformData(data);
+
+    try {
+      const wallet = await paymentService.getWalletData();
+      const spend = wallet.transactions
+        .filter((t) => t.type === 'DEBIT' && t.status === 'COMPLETED')
+        .reduce((sum, t) => sum + t.amount, 0);
+      setWalletSpend(spend);
+    } catch {
+      setWalletSpend(0);
+    }
   };
 
   const openSyncModal = (platform: 'facebook' | 'instagram' | 'tiktok') => {
@@ -67,123 +113,171 @@ const InsightsDashboard: React.FC = () => {
   };
 
   const handleDisconnect = async (platform: string) => {
-    if (window.confirm(`Disconnect ${platform}?`)) {
+    const confirmed = await dialog.confirm(`Disconnect ${platform}?`);
+    if (confirmed) {
       await socialService.disconnectAccount(platform);
       loadData();
     }
   };
 
-  const MetricBox = ({ label, value, icon: Icon, color }: any) => (
-    <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center text-center">
-      <div className={`${color} mb-1 opacity-80`}>
-        <Icon className="w-4 h-4" />
+  const MetricBox = ({ label, value, icon: Icon }: any) => (
+    <div className="stat-card flex flex-col items-center text-center">
+      <div className="w-8 h-8 rounded-[var(--r-sm)] flex items-center justify-center mb-2" style={{ background: 'var(--kw-green-pale)' }}>
+        <Icon className="w-4 h-4" style={{ color: 'var(--primary)' }} />
       </div>
-      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight mb-1">{label}</p>
-      <p className="text-lg font-black text-slate-900 dark:text-white leading-none">
+      <p className="text-[10px] font-bold uppercase tracking-[0.1em] mb-1" style={{ color: 'var(--fg-subtle)' }}>{label}</p>
+      <p className="font-display text-xl font-semibold" style={{ color: 'var(--fg)' }}>
         {typeof value === 'number' ? value.toLocaleString() : value || '0'}
       </p>
     </div>
   );
 
   return (
-    <div className="max-w-6xl mx-auto py-10 px-4 space-y-12 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-        <div className="text-center md:text-left space-y-1">
-          <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Social Insights</h1>
-          <p className="text-slate-500 font-medium">Automated data sync via Kawayan Extension.</p>
+    <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
+      {/* Page Header */}
+      <div className="page-head">
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-2 h-2 rounded-full animate-pulse-dot bg-[var(--primary)]" />
+            <span className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: 'var(--fg-subtle)' }}>Growth Analytics</span>
+          </div>
+          <h1 className="page-head__title">Growth Insights</h1>
+          <p className="page-head__sub">
+            Engagement metrics, charts and digital ROI synced via the Kawayan extension.
+          </p>
         </div>
 
-        <div className="flex bg-white dark:bg-slate-800 p-2 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-700 gap-2">
-            {[
-              { id: 'facebook', icon: Facebook, color: 'hover:bg-[#1877F2]' },
-              { id: 'instagram', icon: Instagram, color: 'hover:bg-gradient-to-tr hover:from-[#f09433] hover:via-[#dc2743] hover:to-[#bc1888]' },
-              { id: 'tiktok', icon: MessageCircle, color: 'hover:bg-black' }
-            ].map((p) => (
-              <button 
-                key={p.id}
-                onClick={() => openSyncModal(p.id as any)}
-                className={`p-4 rounded-2xl transition-all ${p.color} hover:text-white text-slate-400 bg-slate-50 dark:bg-slate-900 flex items-center gap-2 font-bold text-sm shadow-sm`}
-              >
-                <p.icon className="w-5 h-5" />
-                <span className="hidden sm:inline capitalize">Add {p.id}</span>
-              </button>
-            ))}
+        <div className="flex p-1 rounded-[var(--r-lg)] gap-1"
+          style={{ background: 'var(--bg-alt)', border: '1px solid var(--border)' }}>
+          {[
+            { id: 'facebook', icon: Facebook },
+            { id: 'instagram', icon: Instagram },
+            { id: 'tiktok', icon: MessageCircle }
+          ].map((p) => (
+            <button
+              key={p.id}
+              onClick={() => openSyncModal(p.id as any)}
+              className="px-3 py-2 rounded-[var(--r)] text-sm font-semibold flex items-center gap-2 transition-all"
+              style={{ color: 'var(--fg-muted)' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--card)'; e.currentTarget.style.color = 'var(--fg)'; e.currentTarget.style.boxShadow = 'var(--shadow-xs)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = ''; e.currentTarget.style.color = 'var(--fg-muted)'; e.currentTarget.style.boxShadow = ''; }}
+            >
+              <p.icon className="w-4 h-4" />
+              <span className="hidden sm:inline text-xs capitalize">+ {p.id}</span>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Main Stats Display */}
-      <div className="grid grid-cols-1 gap-8">
+      {/* ROI + Chart */}
+      {platformData.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div className="surface p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-[var(--r-sm)] flex items-center justify-center" style={{ background: 'var(--kw-green-pale)' }}>
+                <DollarSign className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+              </div>
+              <h2 className="font-display text-base font-semibold" style={{ color: 'var(--fg)' }}>Digital ROI</h2>
+            </div>
+            <p className="font-display text-4xl font-semibold" style={{ color: digitalRoiPercent >= 0 ? 'var(--primary)' : 'var(--danger)' }}>
+              {digitalRoiPercent >= 0 ? '+' : ''}{digitalRoiPercent}%
+            </p>
+            <p className="text-xs mt-2 leading-relaxed" style={{ color: 'var(--fg-muted)' }}>
+              Estimated value ₱{estimatedDigitalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} from {totalReach.toLocaleString()} reach units vs ₱{walletSpend.toLocaleString()} spend.
+            </p>
+          </div>
+          <div className="surface lg:col-span-2 p-6" style={{ height: '280px' }}>
+            <h2 className="font-display text-base font-semibold mb-4" style={{ color: 'var(--fg)' }}>Engagement by channel</h2>
+            <ResponsiveContainer width="100%" height="82%">
+              <BarChart data={engagementChartData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                <XAxis dataKey="name" tick={{ fill: 'var(--fg-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'var(--fg-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ borderRadius: 'var(--r)', border: '1px solid var(--border-strong)', background: 'var(--card)', boxShadow: 'var(--shadow-md)' }} />
+                <Bar dataKey="reach" radius={[8, 8, 0, 0]}>
+                  {engagementChartData.map((_, i) => (
+                    <Cell key={i} fill={chartColors[i % chartColors.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Platform Cards */}
+      <div className="space-y-5">
         {platformData.length === 0 ? (
-          <div className="py-32 text-center bg-white dark:bg-slate-800/50 rounded-[3rem] border-2 border-dashed border-slate-200 dark:border-slate-700">
-            <BarChart3 className="w-16 h-16 text-slate-200 dark:text-slate-700 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-slate-400">No Channels Connected</h3>
-            <p className="text-slate-500 text-sm mt-1">Select a platform above to start syncing your data.</p>
+          <div className="surface py-24 text-center" style={{ borderStyle: 'dashed', borderWidth: '1.5px' }}>
+            <div className="w-14 h-14 rounded-[var(--r-lg)] flex items-center justify-center mx-auto mb-4"
+              style={{ background: 'var(--kw-green-pale)' }}>
+              <BarChart3 className="w-7 h-7" style={{ color: 'var(--primary)' }} />
+            </div>
+            <h3 className="font-display text-lg font-semibold mb-2" style={{ color: 'var(--fg)' }}>No channels connected</h3>
+            <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
+              Select a platform above to start syncing your data.
+            </p>
           </div>
         ) : (
           platformData.map((data) => (
-            <div key={data.platform} className="bg-white dark:bg-slate-800 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden group">
+            <div key={data.platform} className="surface overflow-hidden">
+              <div className="h-1" style={{ background: data.platform === 'facebook' ? '#1877F2' : data.platform === 'instagram' ? 'linear-gradient(90deg, #f09433, #dc2743, #bc1888)' : '#000' }} />
               <div className="flex flex-col lg:flex-row">
-                {/* Header Sidebar */}
-                <div className={`lg:w-64 p-8 flex flex-col justify-between items-center text-center border-b lg:border-b-0 lg:border-r border-slate-100 dark:border-slate-700 ${
-                  data.platform === 'facebook' ? 'bg-blue-50/30' : 
-                  data.platform === 'instagram' ? 'bg-rose-50/30' : 
-                  'bg-slate-50/30'
-                }`}>
-                  <div className="space-y-4">
-                    <div className={`p-5 rounded-3xl shadow-2xl mx-auto w-fit ${
-                      data.platform === 'facebook' ? 'bg-[#1877F2]' : 
-                      data.platform === 'instagram' ? 'bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888]' : 
+                <div className="lg:w-52 p-6 flex flex-col justify-between items-center text-center border-b lg:border-b-0 lg:border-r"
+                  style={{ borderColor: 'var(--border)', background: 'var(--bg-alt)' }}>
+                  <div className="space-y-3">
+                    <div className={`p-4 rounded-[var(--r-lg)] mx-auto w-fit text-white ${
+                      data.platform === 'facebook' ? 'bg-[#1877F2]' :
+                      data.platform === 'instagram' ? 'bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888]' :
                       'bg-black'
-                    } text-white`}>
-                      {data.platform === 'facebook' ? <Facebook className="w-8 h-8" /> : 
-                       data.platform === 'instagram' ? <Instagram className="w-8 h-8" /> : 
-                       <MessageCircle className="w-8 h-8" />}
+                    }`}
+                      style={{ boxShadow: 'var(--shadow-sm)' }}>
+                      {data.platform === 'facebook' ? <Facebook className="w-6 h-6" /> :
+                       data.platform === 'instagram' ? <Instagram className="w-6 h-6" /> :
+                       <MessageCircle className="w-6 h-6" />}
                     </div>
                     <div>
-                      <h3 className="text-2xl font-black text-slate-900 dark:text-white capitalize">{data.platform}</h3>
-                      <p className="text-sm font-bold text-emerald-500">@{data.username}</p>
+                      <h3 className="font-display font-semibold capitalize" style={{ color: 'var(--fg)' }}>{data.platform}</h3>
+                      <p className="text-xs font-semibold" style={{ color: 'var(--primary)' }}>@{data.username}</p>
                     </div>
                   </div>
-
-                  <div className="w-full space-y-2 mt-8">
-                    <button 
+                  <div className="w-full space-y-2 mt-5">
+                    <button
                       onClick={() => handleSync(data.platform as any, data.username || '')}
-                      className="w-full py-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-2xl text-xs font-bold text-slate-600 dark:text-slate-200 hover:bg-emerald-500 hover:text-white hover:border-emerald-500 transition-all flex items-center justify-center gap-2 shadow-sm"
+                      className="btn btn-outline btn-sm w-full"
                     >
                       <RefreshCcw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
                     </button>
-                    <button 
+                    <button
                       onClick={() => handleDisconnect(data.platform)}
-                      className="w-full py-3 text-xs font-bold text-slate-400 hover:text-rose-500 transition-colors"
-                    >
+                      className="w-full py-1.5 text-xs font-medium transition-colors"
+                      style={{ color: 'var(--fg-subtle)' }}
+                      onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--fg-subtle)'}>
                       Disconnect
                     </button>
                   </div>
                 </div>
 
-                {/* Detailed Metrics Grid */}
-                <div className="flex-1 p-8 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="flex-1 p-5 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
                   <MetricBox label="Followers" value={data.followers} icon={Users} color="text-indigo-500" />
-                  
                   {data.platform === 'facebook' && (
                     <>
-                      <MetricBox label="Views" value={(data as any).views} icon={Eye} color="text-emerald-500" />
+                      <MetricBox label="Views" value={(data as any).views} icon={Eye} color="text-[#2B5748]" />
                       <MetricBox label="Viewers" value={(data as any).viewers} icon={Users} color="text-blue-500" />
                       <MetricBox label="Interactions" value={(data as any).interactions} icon={Heart} color="text-rose-500" />
                       <MetricBox label="Visits" value={(data as any).visits} icon={MousePointer2} color="text-amber-500" />
                       <MetricBox label="Follows" value={(data as any).follows} icon={UserPlus} color="text-cyan-500" />
                       <MetricBox label="Unfollows" value={(data as any).unfollows} icon={UserMinus} color="text-slate-400" />
-                      <MetricBox label="Net Follows" value={(data as any).netFollows} icon={TrendingUp} color="text-green-500" />
+                      <MetricBox label="Net Follows" value={(data as any).netFollows} icon={TrendingUp} color="text-[#2B5748]" />
                     </>
                   )}
-
                   {data.platform === 'instagram' && (
                     <>
                       <MetricBox label="Following" value={data.following} icon={UserPlus} color="text-purple-500" />
                       <MetricBox label="Posts" value={(data as any).posts} icon={ImageIcon} color="text-orange-500" />
                     </>
                   )}
-
                   {data.platform === 'tiktok' && (
                     <>
                       <MetricBox label="Likes" value={data.likes} icon={Heart} color="text-rose-500" />
@@ -199,60 +293,65 @@ const InsightsDashboard: React.FC = () => {
 
       {/* Sync Modal */}
       {showSyncModal && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl relative animate-in zoom-in-95 duration-200">
-            <button 
+        <div className="kw-overlay" onClick={() => setShowSyncModal(false)}>
+          <div className="kw-sheet w-full max-w-sm overflow-hidden relative" onClick={(e) => e.stopPropagation()}>
+            <div style={{ height: 3, background: 'var(--kw-green)' }} />
+            <button
               onClick={() => setShowSyncModal(false)}
-              className="absolute top-6 right-6 p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition"
-            >
-              <X className="w-5 h-5" />
+              className="absolute top-4 right-4 btn btn-ghost btn-sm !p-1.5"
+              aria-label="Close">
+              <X className="w-4 h-4" />
             </button>
 
-            <div className="text-center mb-8">
-              <div className={`w-20 h-20 rounded-3xl mx-auto mb-4 flex items-center justify-center text-white shadow-2xl ${
-                targetPlatform === 'facebook' ? 'bg-[#1877F2]' : 
-                targetPlatform === 'instagram' ? 'bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888]' : 
-                'bg-black'
-              }`}>
-                {targetPlatform === 'facebook' ? <Facebook className="w-10 h-10" /> : 
-                 targetPlatform === 'instagram' ? <Instagram className="w-10 h-10" /> : 
-                 <MessageCircle className="w-10 h-10" />}
+            <div className="p-8">
+              <div className="text-center mb-6">
+                <div className={`w-14 h-14 rounded-[var(--r-lg)] mx-auto mb-4 flex items-center justify-center text-white ${
+                  targetPlatform === 'facebook' ? 'bg-[#1877F2]' :
+                  targetPlatform === 'instagram' ? 'bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888]' :
+                  'bg-black'
+                }`}
+                  style={{ boxShadow: 'var(--shadow-sm)' }}>
+                  {targetPlatform === 'facebook' ? <Facebook className="w-7 h-7" /> :
+                   targetPlatform === 'instagram' ? <Instagram className="w-7 h-7" /> :
+                   <MessageCircle className="w-7 h-7" />}
+                </div>
+                <h2 className="font-display text-xl font-semibold capitalize" style={{ color: 'var(--fg)' }}>Connect {targetPlatform}</h2>
+                <p className="text-sm mt-1" style={{ color: 'var(--fg-muted)' }}>Enter your handle to begin syncing.</p>
               </div>
-              <h2 className="text-2xl font-black text-slate-900 dark:text-white capitalize">Connect {targetPlatform}</h2>
-              <p className="text-slate-500 mt-1">Enter your handle to begin syncing.</p>
-            </div>
 
-            <div className="space-y-4">
-              <div className="relative">
-                <span className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-lg">@</span>
-                <input 
-                  type="text" 
-                  autoFocus
-                  value={modalUsername}
-                  onChange={(e) => setModalUsername(e.target.value)}
-                  placeholder="username"
-                  className="w-full pl-10 pr-6 py-5 bg-slate-50 dark:bg-slate-900 border-2 border-slate-100 dark:border-slate-700 rounded-3xl text-lg font-bold outline-none focus:border-emerald-500 transition-all"
-                  onKeyDown={(e) => e.key === 'Enter' && handleSync(targetPlatform!, modalUsername)}
-                />
+              <div className="space-y-3">
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-semibold z-10" style={{ color: 'var(--fg-muted)' }}>@</span>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={modalUsername}
+                    onChange={(e) => setModalUsername(e.target.value)}
+                    placeholder="username"
+                    className="input !pl-8"
+                    onKeyDown={(e) => e.key === 'Enter' && handleSync(targetPlatform!, modalUsername)}
+                  />
+                </div>
+                <button
+                  onClick={() => handleSync(targetPlatform!, modalUsername)}
+                  className="btn btn-primary w-full">
+                  Start data sync
+                </button>
               </div>
-              <button 
-                onClick={() => handleSync(targetPlatform!, modalUsername)}
-                className="w-full py-5 bg-emerald-600 text-white rounded-3xl font-black text-lg hover:bg-emerald-700 transition shadow-xl shadow-emerald-600/20"
-              >
-                Start Data Sync
-              </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Loading overlay */}
       {loading && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex flex-col items-center justify-center text-white">
-           <div className="w-20 h-20 bg-emerald-500 rounded-3xl flex items-center justify-center shadow-2xl animate-bounce mb-6">
-              <RefreshCcw className="w-10 h-10 text-white animate-spin" />
-           </div>
-           <p className="text-2xl font-black">Syncing Live Data...</p>
-           <p className="text-slate-300 mt-2">The extension is working its magic.</p>
+        <div className="kw-overlay flex-col" style={{ background: 'rgba(13,26,21,0.85)' }}>
+          <div className="w-16 h-16 rounded-[var(--r-lg)] flex items-center justify-center mb-5"
+            style={{ background: 'color-mix(in srgb, var(--primary) 30%, transparent)', boxShadow: 'var(--shadow-lg)' }}>
+            <RefreshCcw className="w-8 h-8 text-[#9CB080] animate-spin" />
+          </div>
+          <p className="font-display text-xl text-white">Syncing live data…</p>
+          <p className="text-sm mt-2 text-white/50">The extension is working its magic.</p>
         </div>
       )}
     </div>

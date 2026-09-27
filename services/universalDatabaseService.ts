@@ -1,45 +1,23 @@
-// Universal database service that works in both browser and Node.js environments
+// Wraps the browser-side (localStorage) database service behind a stable async
+// interface. The real backend is server.js -> SupabaseService over the API;
+// this class is only ever used from frontend components (App.tsx, Login.tsx, etc).
 import { User, BrandProfile, GeneratedPost } from '../types';
 import { logger } from '../utils/logger';
-
-// Dynamic import for better-sqlite3 (only works in Node.js)
-const isNodeEnvironment = typeof window === 'undefined';
-
-class DatabaseServiceFactory {
-  static async createService() {
-    if (isNodeEnvironment) {
-      // Node.js environment - use SQLite
-      const { DatabaseService } = await import('./databaseService');
-      return new DatabaseService();
-    } else {
-      // Browser environment - use localStorage
-      const { ClientDatabaseService } = await import('./clientDatabaseService');
-      return new ClientDatabaseService();
-    }
-  }
-}
 
 export class UniversalDatabaseService {
   private service: any;
 
   constructor() {
-    // Store promise that resolves to the appropriate service
     this.initializeService();
   }
 
   private async initializeService() {
     try {
-      this.service = await DatabaseServiceFactory.createService();
-      logger.info(`Database service initialized`, { 
-        environment: isNodeEnvironment ? 'Node.js/SQLite' : 'Browser/LocalStorage' 
-      });
+      const { ClientDatabaseService } = await import('./clientDatabaseService');
+      this.service = new ClientDatabaseService();
+      logger.info('Database service initialized', { environment: 'Browser/LocalStorage' });
     } catch (error) {
-      logger.error('Failed to initialize database service', { error, environment: isNodeEnvironment ? 'Node.js' : 'Browser' });
-      // Fallback to localStorage if SQLite fails
-      if (isNodeEnvironment) {
-        const { ClientDatabaseService } = await import('./clientDatabaseService');
-        this.service = new ClientDatabaseService();
-      }
+      logger.error('Failed to initialize database service', { error });
     }
   }
 
@@ -51,9 +29,15 @@ export class UniversalDatabaseService {
   }
 
   // --- Wrapper Methods ---
-  async createUser(email: string, password: string, role: 'user' | 'admin' = 'user', businessName?: string): Promise<User | null> {
+  async createUser(
+    email: string,
+    password: string,
+    role: 'user' | 'admin' = 'user',
+    businessName?: string,
+    options?: { acceptedTerms?: boolean; termsVersion?: string }
+  ): Promise<User | null> {
     const service = await this.getService();
-    return service.createUser(email, password, role, businessName);
+    return service.createUser(email, password, role, businessName, options);
   }
 
   async loginUser(email: string, password: string): Promise<{ user: User; token: string } | null> {
@@ -88,15 +72,8 @@ export class UniversalDatabaseService {
   }
 
   getCurrentUser(): User | null {
-    if (isNodeEnvironment) {
-      // Node.js - need to handle async
-      logger.warn('getCurrentUser called in Node.js environment - should be async');
-      return null;
-    } else {
-      // Browser - can use localStorage directly
-      const session = localStorage.getItem('kawayan_session');
-      return session ? JSON.parse(session) : null;
-    }
+    const session = localStorage.getItem('kawayan_session');
+    return session ? JSON.parse(session) : null;
   }
 
   async getCurrentUserAsync(): Promise<User | null> {
@@ -146,9 +123,20 @@ export class UniversalDatabaseService {
     pendingTransactions: number;
     revenueData: { name: string; value: number }[];
     churnData: { name: string; value: number }[];
+    retentionRate: number;
   }> {
     const service = await this.getService();
     return service.getAdminStats(start, end);
+  }
+
+  async getPendingTransactionsAdmin(): Promise<any[]> {
+    const service = await this.getService();
+    return service.getPendingTransactionsAdmin();
+  }
+
+  async approveTransactionAdmin(transactionId: string): Promise<void> {
+    const service = await this.getService();
+    return service.approveTransactionAdmin(transactionId);
   }
 
   async getAllUsers(): Promise<User[]> {
@@ -191,6 +179,28 @@ export class UniversalDatabaseService {
     return service.healthCheck();
   }
 
+  async getVerificationStatus(userId: string): Promise<any> {
+    const service = await this.getService();
+    if (service.getVerificationStatus) return service.getVerificationStatus(userId);
+    if (service.getVerification) return service.getVerification(userId) ?? { status: 'none' };
+    return { status: 'none' };
+  }
+
+  async getAllVerifications(): Promise<any[]> {
+    const service = await this.getService();
+    return service.getAllVerifications ? service.getAllVerifications() : [];
+  }
+
+  async approveVerification(id: string): Promise<void> {
+    const service = await this.getService();
+    return service.approveVerification(id);
+  }
+
+  async rejectVerification(id: string, reason: string): Promise<void> {
+    const service = await this.getService();
+    return service.rejectVerification(id, reason);
+  }
+
   async close(): Promise<void> {
     const service = await this.getService();
     if (service.close) {
@@ -199,7 +209,7 @@ export class UniversalDatabaseService {
   }
 
   static isClientEnvironment(): boolean {
-    return !isNodeEnvironment;
+    return true;
   }
 }
 
